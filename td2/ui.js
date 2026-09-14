@@ -2897,6 +2897,47 @@
   if (window.visualViewport) window.visualViewport.addEventListener('resize', kbPaint);
   window.addEventListener('orientationchange', function () { kbBase = 0; setTimeout(function () { kbBase = window.innerHeight; kbPaint(); }, 400); });
 
+  // ── 폰 폭이 아니라 PC 폭(980px)으로 그려진 채 굳는 것 되살리기 ──
+  /* 🔴 09-15 형님 폰: 쉬었다가 다시 여니 화면 전체가 PC 폭으로 그려져 가운데 좁은 기둥으로 줄어 보였다(새로 고치면 정상).
+     뷰포트 설정(width=device-width)이 안 먹은 상태다 — 흉내로 재면 폭 980·배율 0.42·600px 넘는 화면용 바탕색까지 캡처와 같다.
+     → 폭이 폰 화면보다 넓거나 배율이 줄어 굳었으면 ① 뷰포트 설정을 새로 넣고 ② 그래도 그대로면 한 번만 새로 고친다.
+     «PC 버전 사이트» 모드(UA에 Android·iPhone 없음)는 일부러 넓게 보는 것이라 새로 고치지 않는다. */
+  var VP = 'width=device-width, initial-scale=1, viewport-fit=cover';
+  function vpBad() {
+    if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) return false;
+    var cw = document.documentElement.clientWidth || window.innerWidth || 0;
+    var sw = Math.max(window.screen.width || 0, window.screen.height || 0);
+    var vv = window.visualViewport;
+    if (!cw || !sw) return false;
+    return cw > sw + 40 || (cw >= 600 && !!vv && vv.scale < 0.9);
+  }
+  var vpBusy = false;
+  function vpFix() {
+    if (vpBusy || document.hidden || !vpBad()) return;
+    vpBusy = true;
+    var old = document.querySelector('meta[name="viewport"]');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var m = document.createElement('meta');
+    m.name = 'viewport';
+    m.content = VP;
+    document.head.appendChild(m);
+    setTimeout(function () {
+      vpBusy = false;
+      if (!vpBad()) { schedule(); return; }          // 돌아왔다 — 창 폭을 보는 달력 칸을 다시 그린다
+      if (!/Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) return;
+      if (isField(document.activeElement)) return;   // 적는 중이면 건드리지 않는다 — 초점이 빠진 뒤 다시 본다
+      var last = 0;
+      try { last = +window.sessionStorage.getItem('td2m:vpReload') || 0; } catch (e) { /* 무시 */ }
+      if (Date.now() - last < 60000) return;         // 새로 고쳐도 그대로면 돌지 않는다
+      try { window.sessionStorage.setItem('td2m:vpReload', String(Date.now())); } catch (e) { return; }
+      window.location.reload();
+    }, 400);
+  }
+  window.addEventListener('pageshow', function () { setTimeout(vpFix, 50); });
+  window.addEventListener('load', function () { setTimeout(vpFix, 50); });
+  document.addEventListener('focusout', function () { setTimeout(vpFix, 300); });
+  setTimeout(vpFix, 0);
+
   // ── 고정 요소 연결 ───────────────────────
   $('btn-refresh').appendChild(icon('refresh'));
   $('btn-opt').appendChild(icon('sliders'));
@@ -3000,11 +3041,11 @@
 
   if (PR && PR.onInstall) PR.onInstall(function () { if (ui.overlay === 'opt') renderOptInstall(); schedule(); });
   var resizeT = 0;
-  window.addEventListener('resize', function () { clearTimeout(resizeT); resizeT = setTimeout(schedule, 150); });
+  window.addEventListener('resize', function () { clearTimeout(resizeT); resizeT = setTimeout(function () { schedule(); vpFix(); }, 150); });
 
   M.on(schedule);
   render();
   M.start();
   setInterval(schedule, 30000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) schedule(); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { schedule(); setTimeout(vpFix, 50); } });
 })();
