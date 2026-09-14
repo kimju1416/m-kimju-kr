@@ -1,6 +1,6 @@
-/* ui.js — TD2 폰 화면(그리기·누르기).
+/* ui.js — Teacher Desk 2 Mobile 화면(그리기·누르기).
    자료는 window.TD2M(core.js)에서만 받는다. 이 파일은 계산하지 않고 그리기만 한다
-   (지금 몇 교시인지만 폰 시계로 잰다).
+   (지금 몇 교시인지만 폰 시계로 잰다). 화면 설정은 window.TD2PREFS(prefs.js)가 맡는다.
    규칙: 자료 글자는 textContent로만 넣는다. innerHTML·insertAdjacentHTML·outerHTML 쓰지 않음.
    날짜 YYYY-MM-DD는 늘 로컬 날짜(new Date(y, m-1, d))로 다룬다. */
 (function () {
@@ -17,6 +17,13 @@
     }
     return;
   }
+
+  var UI_VER = 'm2 · 2026-09-14';
+  var PR = window.TD2PREFS || null;
+  function prefs() {
+    return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal' };
+  }
+  function setPref(patch) { if (PR) PR.set(patch); }
 
   // ── DOM 도구 ─────────────────────────────
   function h(tag, cls, text) {
@@ -39,7 +46,8 @@
     refresh: 'M20 12a8 8 0 1 1-2.35-5.65M20 4v5h-5',
     close: 'M6 6l12 12M18 6 6 18',
     up: 'm6 15 6-6 6 6',
-    down: 'm6 9 6 6 6-6'
+    down: 'm6 9 6 6 6-6',
+    sliders: 'M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4'
   };
   function icon(name) {
     var s = document.createElementNS(SVGNS, 'svg');
@@ -69,8 +77,8 @@
     return d;
   }
   function empty(text) { return h('p', 'empty', text); }
-  function table(widths) {
-    var t = h('table', 't');
+  function table(widths, cls) {
+    var t = h('table', 't' + (cls ? ' ' + cls : ''));
     var cg = h('colgroup');
     widths.forEach(function (w) {
       var c = h('col');
@@ -91,7 +99,7 @@
   function toDate(s) { return new Date(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)); }
   function dayNum(s) { return Math.round(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 86400000); }
   function addDays(s, n) { var d = toDate(s); d.setDate(d.getDate() + n); return ymd(d); }
-  function diff(a, b) { return dayNum(b) - dayNum(a); }        // b - a (일)
+  function diff(a, b) { return dayNum(b) - dayNum(a); }
   function today() { return ymd(new Date()); }
   function dowOf(s) { return toDate(s).getDay(); }
   function md(s) { return isYmd(s) ? s.slice(5) : ''; }
@@ -103,8 +111,8 @@
     m = ((m % 12) + 12) % 12;
     return y + '-' + pad(m + 1);
   }
-  function toMin(hm) {
-    var m = /^(\d{1,2}):(\d{2})$/.exec(hm || '');
+  function toMin(t) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(t || '');
     return m ? (+m[1]) * 60 + (+m[2]) : NaN;
   }
   function hm(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
@@ -132,16 +140,61 @@
   // ── 자료 접근 ───────────────────────────
   function S() { return M.state || {}; }
   function V() { return S().view || null; }
+  function isReady() { return S().phase === 'ready' && !!S().view; }
   function dayOf(s) { var v = V(); return (v && v.days && v.days[s]) || null; }
   function rangeFrom() { var v = V(); return (v && v.range && isYmd(v.range.from)) ? v.range.from : addDays(today(), -60); }
   function rangeTo() { var v = V(); return (v && v.range && isYmd(v.range.to)) ? v.range.to : addDays(today(), 90); }
   function clampDay(s, a, b) { return s < a ? a : (s > b ? b : s); }
-  function hasStudents() {
-    var v = V();
-    return !!(v && v.students === true && v.attend && Array.isArray(v.attend.students));
-  }
   function pend() { return arr(S().pending); }
   function isActive(o) { return o && (o.status === 'queued' || o.status === 'sent'); }
+
+  // 학생 자료: 반별(test2) 형식으로 맞춘다. 옛 형식(test1: attend.cls·students·days + view.talk)도 받는다.
+  function attendModel() {
+    var v = V();
+    if (!v || v.students !== true || !v.attend) return null;
+    if (ui.amSrc === v && ui.am) return ui.am;
+    var a = v.attend;
+    var classes = [];
+    if (Array.isArray(a.classes)) {
+      classes = a.classes.filter(function (c) { return c && c.cls && Array.isArray(c.students); }).map(function (c) {
+        return { cls: String(c.cls), hr: !!c.hr || String(c.cls) === a.homeroom, students: c.students, days: c.days || {}, talk: c.talk || {} };
+      });
+    } else if (Array.isArray(a.students)) {
+      classes = [{ cls: String(a.cls || ''), hr: true, students: a.students, days: a.days || {}, talk: v.talk || {} }];
+    }
+    var hrs = classes.filter(function (c) { return c.hr; });
+    var rest = classes.filter(function (c) { return !c.hr; });
+    ui.am = {
+      homeroom: a.homeroom || (hrs[0] ? hrs[0].cls : ''),
+      cur: a.cur || '',
+      slots: arr(a.slots),
+      gubun: arr(a.gubun),
+      jong: arr(a.jong),
+      classes: hrs.concat(rest)
+    };
+    ui.amSrc = v;
+    return ui.am;
+  }
+  function hasStudents() { var m = attendModel(); return !!(m && m.classes.length); }
+  function clsOf(cls) {
+    var m = attendModel();
+    return m ? (m.classes.filter(function (c) { return c.cls === cls; })[0] || null) : null;
+  }
+  function defaultCls(m) {
+    if (clsOf(m.cur)) return m.cur;
+    if (clsOf(m.homeroom)) return m.homeroom;
+    return m.classes[0].cls;
+  }
+  function stuIn(c, key) {
+    return c ? (arr(c.students).filter(function (s) { return s.key === key; })[0] || null) : null;
+  }
+  function sortedStudents(c) {
+    return arr(c.students).slice().sort(function (a, b) { return (a.no || 0) - (b.no || 0); });
+  }
+  function stuNameIn(cls, key) {
+    var st = stuIn(clsOf(cls), key);
+    return st ? st.name : String(key || '').split('|').pop();
+  }
 
   // 분류 색(가는 왼쪽 줄에만 씀)
   var CAT = {
@@ -156,24 +209,26 @@
   }
 
   // ── UI 상태 ─────────────────────────────
-  var LS_TAB = 'td2m.tab';
   var TABS = ['cal', 'today', 'memo', 'stu'];
+  var p0 = prefs();
   var ui = {
-    tab: 'cal',
+    tab: p0.start !== 'last' ? p0.start : p0.tab,
     dayRef: today(),
-    calYm: '', calSel: '',
-    tdDay: '', stuDay: '',
+    calYm: '', calSel: '', tdDay: '', stuDay: '', stuCls: '',
+    showDone: false,
+    scroll: {},
     pbarOpen: false,
     rej: {}, dismissed: {},
-    sheet: null, sheetPushed: false, ignorePop: false,
+    overlay: null, pushed: false, ignorePop: false,
+    sheet: null,
+    sel: null, clearArm: 0, logoutArm: 0,
+    refocusTodo: false,
+    am: null, amSrc: null,
     toastTimer: 0, queued: false
   };
-  try {
-    var savedTab = window.localStorage.getItem(LS_TAB);
-    if (TABS.indexOf(savedTab) >= 0) ui.tab = savedTab;
-  } catch (e) { /* 저장소 막힘: 기본 탭 */ }
+  if (TABS.indexOf(ui.tab) < 0) ui.tab = 'cal';
 
-  // ── 폰에서 적은 것을 화면에 먼저 보이기(낙관적 표시) ─────
+  // ── 폰에서 적은 것을 먼저 보이기(낙관적 표시) ─────
   // mark: 'wait'(PC 반영 대기) · 'next'(다음 회차로 넘김 대기) · 'ok'(반영됨) · 'rej'(반영 못 함)
   var MARK = { wait: 'PC 반영 대기', next: '다음 회차로 넘김 대기', ok: '반영됨', rej: '반영 못 함', short: '대기' };
   function markEl(mark, short) {
@@ -181,12 +236,27 @@
     return h('span', cls, short && mark === 'wait' ? MARK.short : MARK[mark]);
   }
 
+  // 반영된 입력이 들어간 줄 찾기: test2부터는 줄.mid === op.id, mid 칸이 없는 옛 파일만 글자로
+  function markApplied(list, o, textOf) {
+    var i;
+    var hasMid = list.some(function (x) { return typeof x.mid === 'string'; });
+    if (hasMid) {
+      for (i = 0; i < list.length; i++) {
+        if (list[i].mid === o.id) { if (!list[i].mark) list[i].mark = 'ok'; return; }
+      }
+      return;
+    }
+    for (i = 0; i < list.length; i++) {
+      if (textOf(list[i]) && !list[i].mark) { list[i].mark = 'ok'; return; }
+    }
+  }
+
   function dispTodos() {
     var v = V();
     if (!v) return [];
     var list = arr(v.todos).map(function (t) {
       return {
-        fp: t.fp, t: String(t.t || ''), done: !!t.done, srcDone: !!t.done, doneAt: t.doneAt || '',
+        fp: t.fp, mid: t.mid, t: String(t.t || ''), done: !!t.done, srcDone: !!t.done, doneAt: t.doneAt || '',
         due: t.due || '', start: t.start || '', rep: t.rep || '', repLabel: t.repLabel || '',
         cat: t.cat || null, mark: '', isNew: false
       };
@@ -196,14 +266,12 @@
     var added = [];
     pend().forEach(function (o) {
       var p = o.p || {};
-      var i, x;
+      var x;
       if (o.type === 'todo.add') {
         if (isActive(o)) {
           added.unshift({ fp: '', t: String(p.t || ''), done: false, srcDone: false, doneAt: '', due: p.due || '', start: '', rep: '', repLabel: '', cat: null, mark: 'wait', isNew: true });
         } else if (o.status === 'applied') {
-          for (i = 0; i < list.length; i++) {
-            if (list[i].t === p.t && !list[i].mark) { list[i].mark = 'ok'; break; }
-          }
+          markApplied(list, o, function (r) { return r.t === p.t; });
         }
       } else if (o.type === 'todo.done') {
         x = byFp[p.fp];
@@ -225,35 +293,32 @@
     var v = V();
     if (!v) return [];
     var list = arr(v.memos).map(function (m) {
-      return { t: String(m.t || ''), c: m.c || '', card: String(m.card || '메모'), mark: '' };
+      return { t: String(m.t || ''), mid: m.mid, c: m.c || '', card: String(m.card || '메모'), mark: '' };
     });
     var first = list[0] || { c: '', card: '메모' };
     var added = [];
     pend().forEach(function (o) {
       if (o.type !== 'memo.add') return;
       var p = o.p || {};
-      if (isActive(o)) {
-        added.unshift({ t: String(p.t || ''), c: first.c, card: first.card, mark: 'wait' });
-      } else if (o.status === 'applied') {
-        for (var i = 0; i < list.length; i++) {
-          if (list[i].t === p.t && !list[i].mark) { list[i].mark = 'ok'; break; }
-        }
-      }
+      if (isActive(o)) added.unshift({ t: String(p.t || ''), c: first.c, card: first.card, mark: 'wait' });
+      else if (o.status === 'applied') markApplied(list, o, function (r) { return r.t === p.t; });
     });
     return added.concat(list);
   }
 
-  function attRec(date, key) {
-    var v = V();
-    var days = (v && v.attend && v.attend.days) || {};
-    var rec = (days[date] && days[date][key]) || null;
+  var ATT_ONE = { 'attend.set': 1, 'attend.clear': 1 };
+  var ATT_MANY = { 'attend.setMany': 1, 'attend.clearMany': 1 };
+  function attRec(cls, date, key) {
+    var c = clsOf(cls);
+    var rec = (c && c.days[date] && c.days[date][key]) || null;
     var mark = '';
     pend().forEach(function (o) {
-      if (o.type !== 'attend.set' && o.type !== 'attend.clear') return;
       var p = o.p || {};
-      if (p.date !== date || p.key !== key) return;
+      if (p.cls !== cls || p.date !== date) return;
+      var hit = ATT_ONE[o.type] ? p.key === key : (ATT_MANY[o.type] ? arr(p.keys).indexOf(key) >= 0 : false);
+      if (!hit) return;
       if (isActive(o)) {
-        rec = o.type === 'attend.set' ? (p.rec || null) : null;
+        rec = (o.type === 'attend.set' || o.type === 'attend.setMany') ? (p.rec || null) : null;
         mark = 'wait';
       } else if (o.status === 'applied') {
         if (mark !== 'wait') mark = 'ok';
@@ -264,51 +329,37 @@
     return { rec: rec, mark: mark };
   }
 
-  function talkList(key, name) {
-    var v = V();
-    var base = arr(v && v.talk && v.talk[key]).map(function (x) {
-      return { d: x.d || '', t: String(x.t || ''), mark: '' };
+  function talkList(cls, key, name) {
+    var c = clsOf(cls);
+    var base = arr(c && c.talk[key]).map(function (x) {
+      return { d: x.d || '', t: String(x.t || ''), mid: x.mid, mark: '' };
     });
     var added = [];
     pend().forEach(function (o) {
       if (o.type !== 'snote.add') return;
       var p = o.p || {};
-      if (p.name !== name) return;
-      if (isActive(o)) {
-        added.unshift({ d: p.d || '', t: String(p.t || ''), mark: 'wait' });
-      } else if (o.status === 'applied') {
-        for (var i = 0; i < base.length; i++) {
-          if (base[i].t === p.t && base[i].d === p.d && !base[i].mark) { base[i].mark = 'ok'; break; }
-        }
-      }
+      if (p.cls !== cls || p.name !== name) return;
+      if (isActive(o)) added.unshift({ d: p.d || '', t: String(p.t || ''), mark: 'wait' });
+      else if (o.status === 'applied') markApplied(base, o, function (r) { return r.t === p.t && r.d === p.d; });
     });
     var all = added.concat(base);
-    // 최근 날짜 먼저 (같은 날은 폰에서 적은 것 먼저 — 안정 정렬)
     return all.map(function (x, i) { return { x: x, i: i }; })
       .sort(function (a, b) { return a.x.d < b.x.d ? 1 : (a.x.d > b.x.d ? -1 : a.i - b.i); })
       .map(function (w) { return w.x; });
   }
 
   function slotShort(id) {
-    var at = (V() && V().attend) || {};
-    var sl = arr(at.slots).filter(function (x) { return x.id === id; })[0];
+    var m = attendModel();
+    var sl = m ? m.slots.filter(function (x) { return x.id === id; })[0] : null;
     return String(sl ? (sl.nm || id) : id).replace(/교시$/, '');
   }
   function recText(rec) {
     if (!rec) return '출석';
-    var at = (V() && V().attend) || {};
-    var slots = arr(at.slots);
+    var m = attendModel();
+    var slots = m ? m.slots : [];
     var ps = arr(rec.p);
     var s = (slots.length && ps.length === slots.length) ? '전체' : ps.map(slotShort).join('·');
     return [rec.g, rec.k].filter(Boolean).join(' ') + (s ? ' · ' + s : '');
-  }
-  function stuByKey(key) {
-    var at = (V() && V().attend) || {};
-    return arr(at.students).filter(function (s) { return s.key === key; })[0] || null;
-  }
-  function stuName(key) {
-    var st = stuByKey(key);
-    return st ? st.name : String(key || '').split('|').pop();
   }
 
   // ── 그리기 예약 ─────────────────────────
@@ -320,7 +371,6 @@
     else setTimeout(run, 16);
   }
 
-  // 자정이 지나면 «오늘»에 맞춰 둔 선택을 새 오늘로
   function rollDay() {
     var t = today();
     if (t === ui.dayRef) return;
@@ -332,7 +382,6 @@
     ui.dayRef = t;
   }
 
-  // 거절된 입력은 사용자가 [확인]할 때까지 화면에 붙잡아 둔다(메모리에만)
   function trackRejected() {
     pend().forEach(function (o) {
       if (o.status === 'rejected' && !ui.dismissed[o.id] && !ui.rej[o.id]) {
@@ -367,36 +416,43 @@
     if (ready) {
       renderTabs();
       renderActive();
+    } else {
+      ui.sel = null;
     }
+    renderActbar(ready);
     renderPbar(ready);
-    if (ui.sheet) {
+    if (ui.overlay === 'sheet') {
       if (ready) renderSheetLive();
-      else closeSheet();
+      else closeOverlay();
+    } else if (ui.overlay === 'opt') {
+      renderOptAcct();
     }
   }
 
   function renderHeader(s, ready) {
-    var v = s.view;
-    var sc = $('hd-school'), sy = $('hd-sync'), rb = $('btn-refresh');
+    var st = $('hd-st'), sc = $('hd-school'), sy = $('hd-sync'), rb = $('btn-refresh');
     clear(sy);
     if (ready) {
-      var school = v.school || {};
+      var school = s.view.school || {};
       sc.textContent = [school.name, school.homeroom].filter(Boolean).join(' · ');
-      var at = Date.parse(v.at);
+      var at = Date.parse(s.view.at);
       if (!isNaN(at)) {
         var d = new Date(at);
         var age = Date.now() - at;
         var when = (ymd(d) === today() ? '' : md(ymd(d)) + ' ') + hm(d);
         sy.appendChild(h('span', age > 86400000 ? 'old' : '', 'PC ' + when + ' · ' + ago(age)));
       }
+      st.hidden = false;
       rb.hidden = false;
     } else {
       sc.textContent = '';
+      st.hidden = true;
       rb.hidden = true;
     }
     rb.disabled = !!s.busy;
     rb.classList.toggle('busy', !!s.busy);
     rb.setAttribute('aria-busy', s.busy ? 'true' : 'false');
+    $('btn-opt').hidden = !PR;
   }
 
   function renderBands(s, ready) {
@@ -405,7 +461,6 @@
     $('band-err').hidden = !errOn;
     if (errOn) $('band-err-tx').textContent = s.err;
     $('btn-band-retry').disabled = !!s.busy;
-
     var stale = false;
     if (ready) {
       var at = Date.parse(s.view.at);
@@ -427,27 +482,14 @@
       steps: ['PC에서 TeacherDesk2를 엽니다', '설정 → [데이터] → 폰 연동을 켭니다', 'PC 간 동기화에 이 폰과 같은 구글 계정으로 로그인합니다', 'PC가 자료를 올린 뒤 아래 [다시 확인]을 누릅니다'],
       act: '다시 확인', fn: 'refresh'
     },
-    'no-drive': {
-      title: '구글 드라이브 허락이 빠졌습니다',
-      desc: '로그인할 때 허락 화면의 ‘구글 드라이브’ 칸을 켜야 PC 자료를 읽을 수 있습니다.',
-      act: '다시 로그인', fn: 'login'
-    },
-    'newer': {
-      title: '페이지를 새로 고쳐 주세요',
-      desc: 'PC 앱이 이 페이지보다 새 형식으로 자료를 올렸습니다.',
-      act: '새로 고침', fn: 'reload'
-    },
+    'no-drive': { title: '구글 드라이브 허락이 빠졌습니다', desc: '로그인할 때 허락 화면의 ‘구글 드라이브’ 칸을 켜야 PC 자료를 읽을 수 있습니다.', act: '다시 로그인', fn: 'login' },
+    'newer': { title: '페이지를 새로 고쳐 주세요', desc: 'PC 앱이 이 페이지보다 새 형식으로 자료를 올렸습니다.', act: '새로 고침', fn: 'reload' },
     'net': { title: '연결하지 못했습니다', desc: '', act: '다시 시도', fn: 'refresh' },
     'auth': { title: '다시 로그인해 주세요', desc: '', act: '다시 로그인', fn: 'login' },
-    'inapp': {
-      title: '이 브라우저에서는 로그인할 수 없습니다',
-      desc: '카카오톡·네이버 안에서 연 페이지는 구글 로그인이 막힙니다. 기본 브라우저로 열어 주세요.',
-      act: '기본 브라우저로 열기', fn: 'external'
-    },
+    'inapp': { title: '이 브라우저에서는 로그인할 수 없습니다', desc: '카카오톡·네이버 안에서 연 페이지는 구글 로그인이 막힙니다. 기본 브라우저로 열어 주세요.', act: '기본 브라우저로 열기', fn: 'external' },
     '': { title: '자료를 불러오지 못했습니다', desc: '', act: '다시 시도', fn: 'refresh' }
   };
   var errFn = 'refresh';
-
   function renderError(s) {
     var e = ERR[s.errCode] || ERR[''];
     $('err-title').textContent = e.title;
@@ -482,13 +524,16 @@
     else if (ui.tab === 'memo') renderMemo();
     else if (ui.tab === 'stu') renderStu();
   }
+  // 탭마다 스크롤 자리를 기억 — 같은 탭을 다시 누르면 맨 위로
   function setTab(t) {
-    if (ui.tab !== t) {
-      ui.tab = t;
-      try { window.localStorage.setItem(LS_TAB, t); } catch (e) { /* 무시 */ }
-      render();
-    }
-    window.scrollTo(0, 0);
+    if (ui.tab === t) { window.scrollTo(0, 0); return; }
+    ui.scroll[ui.tab] = window.pageYOffset || 0;
+    ui.tab = t;
+    ui.sel = null;
+    ui.clearArm = 0;
+    setPref({ tab: t });
+    render();
+    window.scrollTo(0, ui.scroll[t] || 0);
   }
 
   // ── 1) 캘린더 ───────────────────────────
@@ -503,6 +548,7 @@
     renderUpcoming(t);
     renderDday(t);
     renderTodos(t, list);
+    dueChips();
   }
 
   function renderMonth(t, from, to) {
@@ -557,10 +603,7 @@
     var red = evs.some(function (e) { return e && e.red; });
     var cls = 'c' + (col === 0 ? ' sun' : '') + (col === 6 ? ' sat' : '') + (red ? ' red' : '') +
       (ds === t ? ' today' : '') + (ds === ui.calSel ? ' sel' : '');
-    var b = btn(cls, null, function () {
-      ui.calSel = ds;
-      renderCal();
-    });
+    var b = btn(cls, null, function () { ui.calSel = ds; renderCal(); });
     b.appendChild(h('span', 'dn', dn));
     var kinds = {};
     evs.forEach(function (e) { if (e) kinds[e.src === 'mine' || e.src === 'sched' ? e.src : 'gcal'] = true; });
@@ -585,7 +628,7 @@
   function sortEvents(evs) {
     return evs.map(function (e, i) { return { e: e, i: i }; }).sort(function (a, b) {
       var ta = a.e.tm || '', tb = b.e.tm || '';
-      if (!ta !== !tb) return ta ? 1 : -1;       // 종일 먼저
+      if (!ta !== !tb) return ta ? 1 : -1;
       if (ta !== tb) return ta < tb ? -1 : 1;
       return a.i - b.i;
     }).map(function (w) { return w.e; });
@@ -684,8 +727,7 @@
   function renderDday(t) {
     var box = $('cal-dday');
     clear(box);
-    var v = V();
-    var list = arr(v.ddays).filter(function (x) { return x && isYmd(x.date); });
+    var list = arr(V().ddays).filter(function (x) { return x && isYmd(x.date); });
     box.appendChild(sec('D-DAY', list.length + '건'));
     if (!list.length) { box.appendChild(empty('D-Day가 없습니다')); return; }
     var tb = table(['66px', '', '56px']);
@@ -703,15 +745,24 @@
     box.appendChild(tb);
   }
 
+  // 할 일: 입력 줄이 목록 바로 위에 있다 → 추가한 줄이 입력칸 바로 밑에 보인다. 끝낸 것은 접어 둔다.
   function renderTodos(t, list) {
     var box = $('cal-todo');
     clear(box);
     var open = list.filter(function (x) { return !x.srcDone; });
     var done = list.filter(function (x) { return x.srcDone; });
     var left = list.filter(function (x) { return !x.done; }).length;
-    box.appendChild(sec('할 일', '남은 ' + left + ' / 전체 ' + list.length));
+    $('todo-count').textContent = '남은 ' + left + ' / 전체 ' + list.length;
     if (!list.length) { box.appendChild(empty('할 일이 없습니다')); return; }
-    open.concat(done).forEach(function (x) { box.appendChild(todoRow(x, t)); });
+    open.forEach(function (x) { box.appendChild(todoRow(x, t)); });
+    if (done.length) {
+      var tg = btn('done-tog', null, function () { ui.showDone = !ui.showDone; renderCal(); });
+      tg.setAttribute('aria-expanded', ui.showDone ? 'true' : 'false');
+      tg.appendChild(h('span', '', '끝낸 할 일 ' + done.length + '건'));
+      tg.appendChild(h('span', '', ui.showDone ? '접기' : '펼치기'));
+      box.appendChild(tg);
+      if (ui.showDone) done.forEach(function (x) { box.appendChild(todoRow(x, t)); });
+    }
   }
 
   function dueLabel(x, t) {
@@ -761,21 +812,43 @@
     M.op('todo.done', p);
   }
 
+  // 마감 빠른 고르기: 없음 · 오늘 · 내일 (날짜칸이 한 값만 가진다)
+  function dueChips() {
+    var v = $('todo-due').value;
+    var t = today();
+    Array.prototype.forEach.call(document.querySelectorAll('#todo-form .chip'), function (b) {
+      var d = b.getAttribute('data-due');
+      var target = d === '' ? '' : addDays(t, +d);
+      b.setAttribute('aria-pressed', v === target ? 'true' : 'false');
+    });
+  }
+
   function addTodo() {
-    var b = $('todo-add');
-    if (b.disabled) return;
-    var t = $('todo-t').value.replace(/\s+/g, ' ').trim();
+    var inp = $('todo-t');
+    var t = inp.value.replace(/\s+/g, ' ').trim();
     var due = $('todo-due').value;
-    if (!t) { formErr('todo-err', '할 일 내용을 적어 주세요'); $('todo-t').focus(); return; }
+    if (!t) {
+      // 방금 추가한 직후의 두 번 누름은 조용히 넘긴다(입력칸은 이미 비었음).
+      // 단추를 잠그면 Enter로 빠르게 이어 적는 것까지 막히므로 잠그지 않는다.
+      if (Date.now() - (ui.lastAddAt || 0) < 1200) return;
+      formErr('todo-err', '할 일 내용을 적어 주세요');
+      inp.focus();
+      return;
+    }
     if (t.length > 200) { formErr('todo-err', '할 일은 200자까지 적을 수 있습니다'); return; }
     var p = { t: t };
     if (isYmd(due)) p.due = due;
-    lock(b);
+    var keep = ui.refocusTodo || document.activeElement === inp;
+    ui.refocusTodo = false;
+    ui.lastAddAt = Date.now();
     M.op('todo.add', p);
-    $('todo-t').value = '';
+    inp.value = '';
     $('todo-due').value = '';
+    dueChips();
     formErr('todo-err', '');
     toast('할 일을 적었습니다 · PC 반영 대기');
+    // 키보드가 올라와 있었으면 그대로 다음 할 일을 이어 적게
+    if (keep) inp.focus();
   }
 
   // ── 2) 오늘 ─────────────────────────────
@@ -789,11 +862,9 @@
     var d = dayOf(ds) || {};
     var periods = arr(d.periods).filter(function (p) { return p && !isNaN(toMin(p.s)) && !isNaN(toMin(p.e)); })
       .slice().sort(function (a, b) { return toMin(a.s) - toMin(b.s); });
-
     var nowBox = $('td-now');
     clear(nowBox);
     if (ds === t) nowBox.appendChild(nowPanel(periods, new Date()));
-
     renderTimetable(ds, t, d, periods);
     renderMeal(d);
     renderProg(d);
@@ -823,7 +894,6 @@
     return p.p + '교시 ' + (p.subj || '공강');
   }
 
-  // 지금 몇 교시인지(폰 시계)
   function nowInfo(ps, now) {
     if (!ps.length) return { kind: 'none' };
     var sec2 = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
@@ -932,7 +1002,7 @@
     var body = h('tbody');
     ps.forEach(function (p) {
       var s = toMin(p.s) * 60, e = toMin(p.e) * 60;
-      var st = '';
+      var st;
       if (ds < t) st = '종료';
       else if (ds > t) st = '대기';
       else st = nowSec >= e ? '종료' : (nowSec >= s ? '진행' : '대기');
@@ -1075,104 +1145,247 @@
     lock(b);
     M.op('memo.add', { t: t });
     $('memo-t').value = '';
+    $('memo-t').blur();
     formErr('memo-err', '');
     toast('메모를 적었습니다 · PC 반영 대기');
   }
 
-  // ── 4) 학생 ─────────────────────────────
+  // ── 4) 학생: 반 고르기 → 날짜 → 명렬(한 명 누르기 / 여러 명 선택) ──
   function stuBounds(t) {
     var a = addDays(t, -45), b = addDays(t, 7);
     var f = rangeFrom(), to = rangeTo();
     return [a < f ? f : a, b > to ? to : b];
   }
+  function selKeys() {
+    if (!ui.sel) return [];
+    var c = clsOf(ui.sel.cls);
+    if (!c) return [];
+    return sortedStudents(c).filter(function (s) { return ui.sel.keys[s.key]; }).map(function (s) { return s.key; });
+  }
 
   function renderStu() {
-    if (!hasStudents()) return;
+    var m = attendModel();
+    if (!m || !m.classes.length) return;
     var t = today();
-    var at = V().attend;
+    if (!clsOf(ui.stuCls)) { ui.stuCls = defaultCls(m); ui.sel = null; }
+    if (ui.sel && ui.sel.cls !== ui.stuCls) ui.sel = null;
+    var c = clsOf(ui.stuCls);
     var bd = stuBounds(t);
     if (!ui.stuDay) ui.stuDay = t;
     ui.stuDay = clampDay(ui.stuDay, bd[0], bd[1]);
     var ds = ui.stuDay;
-    dayBar($('stu-bar'), ds, t, bd[0], bd[1], function (d) { ui.stuDay = d; renderStu(); });
+
+    renderClsBar(m);
+    dayBar($('stu-bar'), ds, t, bd[0], bd[1], function (d) { ui.stuDay = d; ui.clearArm = 0; renderStu(); });
 
     var box = $('stu-list');
     clear(box);
-    var studs = arr(at.students).slice().sort(function (a, b) { return (a.no || 0) - (b.no || 0); });
+    var studs = sortedStudents(c);
     var counts = {}, order = [];
     var rows = studs.map(function (st) {
-      var a = attRec(ds, st.key);
+      var a = attRec(c.cls, ds, st.key);
       if (a.rec && a.rec.k) {
         if (!counts[a.rec.k]) { counts[a.rec.k] = 0; order.push(a.rec.k); }
         counts[a.rec.k]++;
       }
-      return { st: st, a: a };
+      return { st: st, a: a, talk: talkList(c.cls, st.key, st.name).length };
     });
     var summary = order.length ? order.map(function (k) { return k + ' ' + counts[k]; }).join(' · ') : '모두 출석';
-    box.appendChild(sec((at.cls ? at.cls + ' ' : '') + '출결', summary, order.length > 0));
-    if (!studs.length) { box.appendChild(empty('명렬이 없습니다')); return; }
+    box.appendChild(sec(c.cls + ' 출결 · ' + dayLabel(ds), summary, order.length > 0));
+
+    var tool = h('div', 'tool');
+    if (!ui.sel) {
+      tool.appendChild(h('span', 'tx', '학생을 누르면 출결·상담을 적습니다'));
+      tool.appendChild(btn('tbtn2', '여러 명 선택', function () {
+        ui.sel = { cls: c.cls, keys: {} };
+        ui.clearArm = 0;
+        renderStu();
+      }));
+    } else {
+      var n = selKeys().length;
+      var all = n > 0 && n === studs.length;
+      tool.appendChild(h('span', 'tx on', n + '명 선택'));
+      tool.appendChild(btn('tbtn2', all ? '전체 해제' : '전체 선택', function () {
+        ui.sel.keys = {};
+        if (!all) studs.forEach(function (s) { ui.sel.keys[s.key] = true; });
+        ui.clearArm = 0;
+        renderStu();
+      }));
+      tool.appendChild(btn('tbtn2', '끝내기', function () { ui.sel = null; ui.clearArm = 0; renderStu(); }));
+    }
+    box.appendChild(tool);
+
+    if (!studs.length) { box.appendChild(empty('이 반 명렬이 없습니다')); renderActbar(true); return; }
     var hd = h('div', 'ros-h');
     hd.setAttribute('aria-hidden', 'true');
+    if (ui.sel) hd.appendChild(h('span', 'bxh', ''));
     hd.appendChild(h('span', 'no', '번호'));
     hd.appendChild(h('span', '', '이름'));
     hd.appendChild(h('span', 'sm', '출결'));
     box.appendChild(hd);
+
     rows.forEach(function (r) {
       var st = r.st, a = r.a;
-      var b = btn('ros', null, function () { openSheet(st.key, ds); });
+      var b;
+      var label = st.no + '번 ' + st.name + ', ' + recText(a.rec) + (a.mark ? ', ' + MARK[a.mark] : '') + (r.talk ? ', 상담 ' + r.talk + '건' : '');
+      if (ui.sel) {
+        var on = !!ui.sel.keys[st.key];
+        b = btn('ros', null, function () {
+          if (ui.sel.keys[st.key]) delete ui.sel.keys[st.key];
+          else ui.sel.keys[st.key] = true;
+          ui.clearArm = 0;
+          renderStu();
+        });
+        b.setAttribute('role', 'checkbox');
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+        b.appendChild(h('span', 'bx'));
+      } else {
+        b = btn('ros', null, function () { openSheetOne(c.cls, st.key, ds); });
+      }
       b.appendChild(h('span', 'no', st.no));
       b.appendChild(h('span', 'nm', st.name));
       var sm = h('span', 'sm' + (a.rec ? '' : ' gray'), recText(a.rec));
       if (a.mark) sm.appendChild(markEl(a.mark, true));
       b.appendChild(sm);
-      b.appendChild(icon('right'));
-      b.setAttribute('aria-label', st.no + '번 ' + st.name + ', ' + recText(a.rec) + (a.mark ? ', ' + MARK[a.mark] : ''));
+      if (r.talk) b.appendChild(h('span', 'tk', '상담 ' + r.talk));
+      if (!ui.sel) b.appendChild(icon('right'));
+      b.setAttribute('aria-label', label);
       box.appendChild(b);
     });
+    renderActbar(true);
   }
 
-  // ── 학생 시트 ───────────────────────────
-  function openSheet(key, date) {
-    var st = stuByKey(key);
-    if (!st) return;
-    var a = attRec(date, key);
+  function renderClsBar(m) {
+    var box = $('stu-cls');
+    clear(box);
+    var bar = h('div', 'clsbar');
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', '반 고르기');
+    m.classes.forEach(function (c) {
+      var b = btn('clsb', null, function () {
+        if (ui.stuCls !== c.cls) {
+          ui.stuCls = c.cls;
+          ui.sel = null;
+          ui.clearArm = 0;
+        }
+        renderStu();
+      });
+      var n = arr(c.students).length;
+      b.setAttribute('aria-pressed', c.cls === ui.stuCls ? 'true' : 'false');
+      b.setAttribute('aria-label', c.cls + (c.hr ? ' 담임반' : '') + ', ' + n + '명');
+      b.appendChild(h('span', 'cn', c.cls));
+      var cm = h('span', 'cm');
+      if (c.hr) cm.appendChild(h('span', 'hr', '담임'));
+      cm.appendChild(h('span', '', n + '명'));
+      b.appendChild(cm);
+      bar.appendChild(b);
+    });
+    box.appendChild(bar);
+  }
+
+  // 여러 명 선택 때만 아래 탭 자리에 뜨는 단추 줄
+  function renderActbar(ready) {
+    var on = !!(ready && ui.sel && ui.tab === 'stu' && !ui.overlay && clsOf(ui.sel.cls));
+    $('actbar').hidden = !on;
+    document.body.classList.toggle('sel-mode', on);
+    if (!on) return;
+    var n = selKeys().length;
+    var armed = ui.clearArm && Date.now() < ui.clearArm;
+    var bc = $('act-clear'), bs = $('act-set');
+    bc.textContent = armed ? '한 번 더: ' + n + '명 출석으로' : n + '명 출석으로';
+    bc.classList.toggle('arm', !!armed);
+    bs.textContent = n + '명 출결 입력';
+    bc.disabled = n === 0;
+    bs.disabled = n === 0;
+  }
+
+  function onActClear() {
+    if (!ui.sel) return;
+    var keys = selKeys();
+    if (!keys.length) return;
+    if (!(ui.clearArm && Date.now() < ui.clearArm)) {
+      ui.clearArm = Date.now() + 4000;
+      renderActbar(isReady());
+      setTimeout(function () { renderActbar(isReady()); }, 4100);
+      return;
+    }
+    ui.clearArm = 0;
+    var cls = ui.sel.cls;
+    M.op('attend.clearMany', { cls: cls, date: ui.stuDay, keys: keys });
+    ui.sel = null;
+    toast(cls + ' ' + keys.length + '명 출석으로 되돌렸습니다 · PC 반영 대기');
+    renderStu();
+  }
+
+  // ── 학생 시트(한 명 / 여러 명) ──────────
+  function openSheetOne(cls, key, date) {
+    var c = clsOf(cls);
+    var st = stuIn(c, key);
+    if (!st || ui.overlay) return;
+    var a = attRec(cls, date, key);
     ui.sheet = {
-      key: key, name: st.name, date: date,
+      mode: 'one', cls: cls, key: key, name: st.name, date: date,
       g: a.rec ? (a.rec.g || '') : '',
       k: a.rec ? (a.rec.k || '') : '',
       p: a.rec ? arr(a.rec.p).slice() : [],
       why: a.rec ? String(a.rec.why || '') : ''
     };
-    $('sh-why').value = ui.sheet.why;
-    $('sh-td').value = date;
+    showSheet();
+  }
+  function openSheetMany() {
+    var keys = selKeys();
+    if (!keys.length || ui.overlay) return;
+    ui.clearArm = 0;
+    ui.sheet = { mode: 'many', cls: ui.sel.cls, keys: keys, date: ui.stuDay, g: '', k: '', p: [], why: '' };
+    showSheet();
+  }
+  function showSheet() {
+    var sh = ui.sheet;
+    var many = sh.mode === 'many';
+    $('sh-why').value = sh.why;
+    $('sh-td').value = sh.date;
     $('sh-tt').value = '';
     formErr('sh-err', '');
     formErr('sh-terr', '');
-    var sheet = $('sheet');
-    sheet.hidden = false;
-    sheet.scrollTop = 0;
-    document.body.classList.add('sheet-open');
-    try {
-      window.history.pushState({ td2sheet: 1 }, '');
-      ui.sheetPushed = true;
-    } catch (e) { ui.sheetPushed = false; }
+    $('sh-names').hidden = !many;
+    $('sh-clear').hidden = many;
+    $('sh-talk-wrap').hidden = many;
+    $('sh-warn').hidden = true;
+    var el = $('sheet');
+    el.hidden = false;
+    el.scrollTop = 0;
+    openOverlay('sheet');
     renderSheetEditor();
     renderSheetLive();
     $('sh-close').focus();
   }
 
-  function closeSheet(fromPop) {
-    if (!ui.sheet) return;
+  function openOverlay(name) {
+    ui.overlay = name;
+    document.body.classList.add('sheet-open');
+    document.body.classList.remove('kb');
+    try {
+      window.history.pushState({ td2ov: name }, '');
+      ui.pushed = true;
+    } catch (e) { ui.pushed = false; }
+    renderActbar(isReady());
+  }
+  function closeOverlay(fromPop) {
+    if (!ui.overlay) return;
+    var was = ui.overlay;
+    $(was === 'opt' ? 'opt' : 'sheet').hidden = true;
+    ui.overlay = null;
     ui.sheet = null;
-    $('sheet').hidden = true;
+    ui.logoutArm = 0;
     document.body.classList.remove('sheet-open');
-    if (!fromPop && ui.sheetPushed) {
-      ui.sheetPushed = false;
+    if (!fromPop && ui.pushed) {
+      ui.pushed = false;
       ui.ignorePop = true;
       try { window.history.back(); } catch (e) { ui.ignorePop = false; }
     } else {
-      ui.sheetPushed = false;
+      ui.pushed = false;
     }
+    if (was === 'opt' && !$('btn-opt').hidden) $('btn-opt').focus();
     schedule();
   }
 
@@ -1183,7 +1396,6 @@
     if (k === '조퇴') return ids.slice(-2);
     return [];
   }
-
   function segButtons(box, items, cur, pick) {
     clear(box);
     box.style.gridTemplateColumns = 'repeat(' + Math.max(1, items.length) + ', minmax(0, 1fr))';
@@ -1193,36 +1405,26 @@
       box.appendChild(b);
     });
   }
-
   function renderSheetEditor() {
     var sh = ui.sheet;
-    if (!sh || !hasStudents()) return;
-    var at = V().attend;
-    var slots = arr(at.slots);
-    segButtons($('sh-g'), arr(at.gubun), sh.g, function (val) {
-      sh.g = val;
-      formErr('sh-err', '');
-      renderSheetEditor();
-    });
-    segButtons($('sh-k'), arr(at.jong), sh.k, function (val) {
-      if (sh.k !== val) {
-        sh.k = val;
-        sh.p = defaultSlots(val, slots);
-      }
+    var m = attendModel();
+    if (!sh || !m) return;
+    segButtons($('sh-g'), m.gubun, sh.g, function (val) { sh.g = val; formErr('sh-err', ''); renderSheetEditor(); });
+    segButtons($('sh-k'), m.jong, sh.k, function (val) {
+      if (sh.k !== val) { sh.k = val; sh.p = defaultSlots(val, m.slots); }
       formErr('sh-err', '');
       renderSheetEditor();
     });
     var pb = $('sh-p');
     clear(pb);
-    slots.forEach(function (sl) {
-      var on = sh.p.indexOf(sl.id) >= 0;
+    m.slots.forEach(function (sl) {
       var b = btn('', sl.nm || sl.id, function () {
         var i = sh.p.indexOf(sl.id);
         if (i >= 0) sh.p.splice(i, 1); else sh.p.push(sl.id);
         formErr('sh-err', '');
         renderSheetEditor();
       });
-      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.setAttribute('aria-pressed', sh.p.indexOf(sl.id) >= 0 ? 'true' : 'false');
       pb.appendChild(b);
     });
   }
@@ -1230,19 +1432,34 @@
   function renderSheetLive() {
     var sh = ui.sheet;
     if (!sh) return;
-    if (!hasStudents()) { closeSheet(); return; }
-    var st = stuByKey(sh.key);
-    if (!st) { closeSheet(); return; }
-    var at = V().attend;
-    $('sh-title').textContent = (at.cls ? at.cls + ' · ' : '') + st.no + ' ' + st.name + ' · ' + dayLabel(sh.date);
-    var a = attRec(sh.date, sh.key);
+    var c = clsOf(sh.cls);
+    if (!c) { closeOverlay(); return; }
     var now = $('sh-now');
     clear(now);
-    now.appendChild(h('span', '', '지금 ' + recText(a.rec)));
-    if (a.mark) now.appendChild(markEl(a.mark));
-    $('sh-clear').disabled = !a.rec;
+    if (sh.mode === 'one') {
+      var st = stuIn(c, sh.key);
+      if (!st) { closeOverlay(); return; }
+      $('sh-title').textContent = c.cls + ' · ' + st.no + ' ' + st.name + ' · ' + dayLabel(sh.date);
+      var a = attRec(c.cls, sh.date, sh.key);
+      now.appendChild(h('span', '', '지금 ' + recText(a.rec)));
+      if (a.mark) now.appendChild(markEl(a.mark));
+      $('sh-clear').disabled = !a.rec;
+      renderTalk(c, st);
+      return;
+    }
+    var list = sh.keys.map(function (k) { return stuIn(c, k); }).filter(Boolean);
+    if (!list.length) { closeOverlay(); return; }
+    $('sh-title').textContent = c.cls + ' · ' + list.length + '명 · ' + dayLabel(sh.date);
+    $('sh-names').textContent = list.map(function (s) { return s.no + ' ' + s.name; }).join(', ');
+    var had = list.filter(function (s) { return !!attRec(c.cls, sh.date, s.key).rec; });
+    now.appendChild(h('span', '', had.length ? '기록 있음 ' + had.length + '명' : '모두 출석'));
+    var warn = $('sh-warn');
+    warn.hidden = !had.length;
+    warn.textContent = had.length ? '이미 기록이 있는 ' + had.length + '명(' + had.map(function (s) { return s.name; }).join(', ') + ')은 새로 고른 값으로 바뀝니다.' : '';
+  }
 
-    var list = talkList(sh.key, st.name);
+  function renderTalk(c, st) {
+    var list = talkList(c.cls, st.key, st.name);
     $('sh-talk-n').textContent = list.length + '건';
     var box = $('sh-talk');
     clear(box);
@@ -1267,39 +1484,45 @@
 
   function saveAttend() {
     var sh = ui.sheet;
-    if (!sh || !hasStudents()) return;
+    var m = attendModel();
+    if (!sh || !m) return;
     var b = $('sh-save');
     if (b.disabled) return;
-    var at = V().attend;
     sh.why = $('sh-why').value.replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!sh.g) { formErr('sh-err', '구분을 고르세요'); return; }
     if (!sh.k) { formErr('sh-err', '종류를 고르세요'); return; }
     if (!sh.p.length) { formErr('sh-err', '교시를 하나 이상 고르세요'); return; }
-    var order = arr(at.slots).map(function (s) { return s.id; });
+    var order = m.slots.map(function (s) { return s.id; });
     var rec = { g: sh.g, k: sh.k, why: sh.why, p: order.filter(function (id) { return sh.p.indexOf(id) >= 0; }) };
-    var cur = attRec(sh.date, sh.key).rec;
-    if (sameRec(cur, rec)) { toast('바뀐 것이 없습니다'); return; }
+    if (sh.mode === 'many') {
+      lock(b);
+      M.op('attend.setMany', { cls: sh.cls, date: sh.date, keys: sh.keys.slice(), rec: rec });
+      toast(sh.cls + ' ' + sh.keys.length + '명 출결을 적었습니다 · PC 반영 대기');
+      ui.sel = null;
+      closeOverlay();
+      return;
+    }
+    if (sameRec(attRec(sh.cls, sh.date, sh.key).rec, rec)) { toast('바뀐 것이 없습니다'); return; }
     lock(b);
-    M.op('attend.set', { cls: at.cls, date: sh.date, key: sh.key, rec: rec });
+    M.op('attend.set', { cls: sh.cls, date: sh.date, key: sh.key, rec: rec });
     toast(sh.name + ' 출결을 적었습니다 · PC 반영 대기');
-    closeSheet();
+    closeOverlay();
   }
 
   function clearAttend() {
     var sh = ui.sheet;
-    if (!sh || !hasStudents()) return;
+    if (!sh || sh.mode !== 'one') return;
     var b = $('sh-clear');
-    if (b.disabled) return;
-    if (!attRec(sh.date, sh.key).rec) return;
+    if (b.disabled || !attRec(sh.cls, sh.date, sh.key).rec) return;
     lock(b);
-    M.op('attend.clear', { cls: V().attend.cls, date: sh.date, key: sh.key });
+    M.op('attend.clear', { cls: sh.cls, date: sh.date, key: sh.key });
     toast(sh.name + ' 출석으로 되돌렸습니다 · PC 반영 대기');
-    closeSheet();
+    closeOverlay();
   }
 
   function addTalk() {
     var sh = ui.sheet;
-    if (!sh || !hasStudents()) return;
+    if (!sh || sh.mode !== 'one') return;
     var b = $('sh-tadd');
     if (b.disabled) return;
     var d = $('sh-td').value;
@@ -1308,37 +1531,185 @@
     if (!t) { formErr('sh-terr', '상담 내용을 적어 주세요'); $('sh-tt').focus(); return; }
     if (t.length > 1000) { formErr('sh-terr', '상담 내용은 1000자까지 적을 수 있습니다'); return; }
     lock(b);
-    M.op('snote.add', { cls: V().attend.cls, name: sh.name, d: d, t: t });
+    M.op('snote.add', { cls: sh.cls, name: sh.name, d: d, t: t });
     $('sh-tt').value = '';
+    $('sh-tt').blur();
     formErr('sh-terr', '');
     toast('상담기록을 적었습니다 · PC 반영 대기');
+  }
+
+  // ── 설정 ────────────────────────────────
+  function openOptions() {
+    if (!PR || ui.overlay) return;
+    PR.loadAllFonts();
+    ui.logoutArm = 0;
+    renderOptPrefs();
+    renderOptAcct();
+    var el = $('opt');
+    el.hidden = false;
+    el.scrollTop = 0;
+    openOverlay('opt');
+    $('opt-close').focus();
+  }
+
+  function radioGroup(cls, label, items, cur, onPick, build) {
+    var g = h('div', cls);
+    g.setAttribute('role', 'radiogroup');
+    g.setAttribute('aria-label', label);
+    items.forEach(function (it) {
+      var b = btn('', null, function () { onPick(it.id); });
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', it.id === cur ? 'true' : 'false');
+      b.setAttribute('data-id', it.id);
+      build(b, it);
+      g.appendChild(b);
+    });
+    return g;
+  }
+  function nameOf(list, id) {
+    var x = list.filter(function (i) { return i.id === id; })[0];
+    return x ? x.nm : '';
+  }
+  function pickPref(patch) {
+    setPref(patch);
+    renderOptPrefs();
+    schedule();
+  }
+
+  function renderOptPrefs() {
+    var box = $('opt-prefs');
+    clear(box);
+    var p = prefs();
+
+    box.appendChild(sec('화면 색', nameOf(PR.THEMES, p.theme)));
+    box.appendChild(radioGroup('opt-grid th', '화면 색', PR.THEMES, p.theme, function (id) { pickPref({ theme: id }); }, function (b, it) {
+      b.className = 'pick thb';
+      var sw = h('span', 'sw');
+      sw.setAttribute('data-t', it.id);
+      sw.setAttribute('aria-hidden', 'true');
+      for (var i = 0; i < 4; i++) sw.appendChild(h('i'));
+      b.appendChild(sw);
+      b.appendChild(h('span', '', it.nm));
+    }));
+
+    box.appendChild(sec('강조색', nameOf(PR.ACCENTS, p.accent)));
+    box.appendChild(radioGroup('opt-grid c3', '강조색', PR.ACCENTS, p.accent, function (id) { pickPref({ accent: id }); }, function (b, it) {
+      b.className = 'pick acb';
+      var i = h('i');
+      i.setAttribute('aria-hidden', 'true');
+      b.appendChild(i);
+      b.appendChild(h('span', '', it.nm));
+    }));
+
+    box.appendChild(sec('글씨체', nameOf(PR.FONTS, p.font)));
+    box.appendChild(radioGroup('opt-grid c1', '글씨체', PR.FONTS, p.font, function (id) { pickPref({ font: id }); }, function (b, it) {
+      b.className = 'pick fnb';
+      b.appendChild(h('span', 'pv ff-' + it.id, '가나다 출결 09:50'));
+      b.appendChild(h('span', 'nt', it.nm + ' · ' + it.note));
+    }));
+    box.appendChild(h('p', 'opt-foot', '글꼴을 받지 못하면 기기 기본 글꼴로 보입니다.'));
+
+    box.appendChild(sec('글자 크기', nameOf(PR.SIZES, p.size)));
+    box.appendChild(radioGroup('segr', '글자 크기', PR.SIZES, p.size, function (id) { pickPref({ size: id }); }, function (b, it) {
+      b.textContent = it.nm;
+    }));
+
+    box.appendChild(sec('첫 화면', nameOf(PR.STARTS, p.start)));
+    var starts = radioGroup('segr', '첫 화면', PR.STARTS, p.start, function (id) { pickPref({ start: id }); }, function (b, it) {
+      b.textContent = it.nm;
+    });
+    starts.style.gridTemplateColumns = 'repeat(' + PR.STARTS.length + ', minmax(0, 1fr))';
+    box.appendChild(starts);
+    box.appendChild(h('p', 'opt-foot', '«마지막»은 지난번에 보던 탭으로 엽니다.'));
+
+    var rs = h('div', 'opt-reset');
+    rs.appendChild(btn('obtn', '화면 설정 처음대로', function () {
+      if (PR) PR.reset();
+      renderOptPrefs();
+      schedule();
+      toast('화면 설정을 처음대로 되돌렸습니다');
+    }));
+    box.appendChild(rs);
+  }
+
+  function renderOptAcct() {
+    var box = $('opt-acct');
+    clear(box);
+    var s = S();
+    var v = s.view;
+    box.appendChild(sec('계정'));
+    var a = h('div', 'acct2');
+    a.appendChild(h('p', 'mail', s.email ? s.email : '로그인하지 않았습니다'));
+    if (s.email || s.phase === 'ready') {
+      var act = pend().filter(isActive).length;
+      var armed = ui.logoutArm && Date.now() < ui.logoutArm;
+      if (act) a.appendChild(h('p', 'warn-tx', 'PC에 아직 반영되지 않은 입력이 ' + act + '건 있습니다. 로그아웃하면 이 폰에서 사라질 수 있습니다.'));
+      a.appendChild(btn('obtn' + (armed ? ' arm' : ''), armed ? '한 번 더 누르면 로그아웃' : '로그아웃', onLogout));
+    }
+    box.appendChild(a);
+
+    box.appendChild(sec('정보'));
+    var rows = [];
+    rows.push(['PC 이름', v && v.dev ? v.dev : '–']);
+    rows.push(['PC 판', v && v.ver ? v.ver : '–']);
+    var at = v ? Date.parse(v.at) : NaN;
+    rows.push(['PC가 올린 시각', isNaN(at) ? '–' : ymd(new Date(at)) + ' ' + hm(new Date(at)) + ' · ' + ago(Date.now() - at)]);
+    rows.push(['폰이 받은 시각', s.viewAt ? hm(new Date(s.viewAt)) + ' · ' + ago(Date.now() - s.viewAt) : '–']);
+    rows.push(['폰 화면 판', UI_VER]);
+    var tb = table(['112px', ''], 'info');
+    var body = h('tbody');
+    rows.forEach(function (r) {
+      var tr = h('tr');
+      tr.appendChild(td('', r[0]));
+      tr.appendChild(td(/시각|판/.test(r[0]) ? 'tm' : '', r[1]));
+      body.appendChild(tr);
+    });
+    tb.appendChild(body);
+    box.appendChild(tb);
+  }
+
+  function onLogout() {
+    var act = pend().filter(isActive).length;
+    if (act && !(ui.logoutArm && Date.now() < ui.logoutArm)) {
+      ui.logoutArm = Date.now() + 5000;
+      renderOptAcct();
+      setTimeout(function () { if (ui.overlay === 'opt') renderOptAcct(); }, 5100);
+      return;
+    }
+    ui.logoutArm = 0;
+    closeOverlay();
+    M.logout();
   }
 
   // ── PC 반영 대기 띠 ─────────────────────
   var TYPE_KO = {
     'todo.add': '할 일 추가', 'todo.done': '할 일 체크', 'memo.add': '메모',
-    'attend.set': '출결', 'attend.clear': '출결 되돌림', 'snote.add': '상담기록'
+    'attend.set': '출결', 'attend.clear': '출결 되돌림',
+    'attend.setMany': '출결 · 여러 명', 'attend.clearMany': '출석으로 · 여러 명',
+    'snote.add': '상담기록'
   };
-  var STATUS_KO = { queued: '올리기 대기', sent: 'PC 반영 대기', applied: '반영됨', rejected: '반영 못 함' };
   function firstLine(s) {
     var t = String(s || '').split('\n')[0];
     return t.length > 40 ? t.slice(0, 40) + '…' : t;
   }
   function opText(o) {
     var p = o.p || {};
+    var pre = p.cls ? p.cls + ' ' : '';
     switch (o.type) {
       case 'todo.add': return firstLine(p.t) + (isYmd(p.due) ? ' · ' + md(p.due) + ' 마감' : '');
       case 'todo.done': {
         var v = V();
-        var td0 = v ? arr(v.todos).filter(function (x) { return x.fp === p.fp; })[0] : null;
-        var name = td0 ? firstLine(td0.t) : '할 일';
-        if (td0 && td0.rep && p.on) return name + ' — 다음 회차로';
+        var t0 = v ? arr(v.todos).filter(function (x) { return x.fp === p.fp; })[0] : null;
+        var name = t0 ? firstLine(t0.t) : '할 일';
+        if (t0 && t0.rep && p.on) return name + ' — 다음 회차로';
         return name + (p.on ? ' — 끝냄' : ' — 되돌림');
       }
       case 'memo.add': return firstLine(p.t);
-      case 'attend.set': return stuName(p.key) + ' · ' + md(p.date) + ' · ' + recText(p.rec);
-      case 'attend.clear': return stuName(p.key) + ' · ' + md(p.date) + ' · 출석';
-      case 'snote.add': return (p.name || '') + ' · ' + firstLine(p.t);
+      case 'attend.set': return pre + stuNameIn(p.cls, p.key) + ' · ' + md(p.date) + ' · ' + recText(p.rec);
+      case 'attend.clear': return pre + stuNameIn(p.cls, p.key) + ' · ' + md(p.date) + ' · 출석으로';
+      case 'attend.setMany': return pre + arr(p.keys).length + '명 출결 · ' + md(p.date) + ' · ' + recText(p.rec);
+      case 'attend.clearMany': return pre + arr(p.keys).length + '명 출석으로 · ' + md(p.date);
+      case 'snote.add': return pre + (p.name || '') + ' · ' + firstLine(p.t);
     }
     return '';
   }
@@ -1387,8 +1758,9 @@
       if (o.status === 'rejected') l.appendChild(h('span', 'why', o.why || '반영하지 못했습니다'));
       row.appendChild(l);
       var ps = h('span', 'ps');
-      ps.appendChild(markEl(o.status === 'applied' ? 'ok' : (o.status === 'rejected' ? 'rej' : 'wait')));
-      if (o.status === 'queued') ps.firstChild.textContent = STATUS_KO.queued;
+      var mk = markEl(o.status === 'applied' ? 'ok' : (o.status === 'rejected' ? 'rej' : 'wait'));
+      if (o.status === 'queued') mk.textContent = '올리기 대기';
+      ps.appendChild(mk);
       row.appendChild(ps);
       if (o.status === 'rejected') {
         var dis = btn('dis', '확인', function () {
@@ -1416,17 +1788,87 @@
     e.textContent = msg || '';
     e.hidden = !msg;
   }
-  // 두 번 눌림 막기
   function lock(b) {
     b.disabled = true;
     setTimeout(function () { b.disabled = false; }, 700);
   }
 
+  // ── 당겨서 새로 받기(맨 위에서 아래로 72px) ──
+  var PTR_GO = 72;
+  var ptr = { on: false, y0: 0, x0: 0, dy: 0 };
+  function scrollTop() { return window.pageYOffset || document.documentElement.scrollTop || 0; }
+  function ptrReset() {
+    ptr.on = false;
+    ptr.dy = 0;
+    var el = $('ptr');
+    el.style.height = '0px';
+    el.hidden = true;
+    el.classList.remove('go');
+  }
+  document.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1 || ui.overlay || !isReady() || S().busy) return;
+    if (scrollTop() > 0) return;
+    var tg = e.target;
+    if (tg && tg.closest && tg.closest('.tabs, .pbar, .actbar, .hd, input, textarea')) return;
+    ptr.on = true;
+    ptr.y0 = e.touches[0].clientY;
+    ptr.x0 = e.touches[0].clientX;
+    ptr.dy = 0;
+  }, { passive: true });
+  document.addEventListener('touchmove', function (e) {
+    if (!ptr.on) return;
+    var dy = e.touches[0].clientY - ptr.y0;
+    var dx = Math.abs(e.touches[0].clientX - ptr.x0);
+    if (scrollTop() > 0 || dy < 0 || dx > 40) { ptrReset(); return; }
+    ptr.dy = dy;
+    var el = $('ptr');
+    el.hidden = false;
+    el.style.height = Math.min(52, Math.round(dy * 0.5)) + 'px';
+    var go = dy >= PTR_GO;
+    el.classList.toggle('go', go);
+    $('ptr-tx').textContent = go ? '놓으면 PC 자료를 새로 받습니다' : '당겨서 새로 받기';
+  }, { passive: true });
+  document.addEventListener('touchend', function () {
+    if (!ptr.on) return;
+    var go = ptr.dy >= PTR_GO;
+    ptrReset();
+    if (go) M.refresh();
+  }, { passive: true });
+  document.addEventListener('touchcancel', ptrReset, { passive: true });
+
+  // ── 키보드가 올라오면 아래 탭·대기 띠를 숨겨 입력칸을 가리지 않게 ──
+  function isField(el) {
+    if (!el || !el.tagName) return false;
+    if (el.tagName === 'TEXTAREA') return true;
+    if (el.tagName !== 'INPUT') return false;
+    var t = String(el.type || 'text').toLowerCase();
+    return t === 'text' || t === 'search' || t === 'date' || t === 'email' || t === 'number';
+  }
+  /* 🔴 «초점이 있으면 숨김»만 보면 안 된다 — 안드로이드는 뒤로 가기로 키보드만 내려도 입력칸 초점이 남아
+     아래 탭이 영영 숨은 채가 된다(할 일 추가 뒤 초점을 남겨 두므로 바로 걸린다). 그래서 **화면이 실제로 줄었을 때**
+     (visualViewport 높이가 창보다 120px 넘게 작음 = 키보드가 떠 있음)만 숨긴다. visualViewport가 없는 옛 브라우저만 초점으로 본다 */
+  var kbBase = window.innerHeight;
+  function kbPaint() {
+    var vv = window.visualViewport;
+    var focused = isField(document.activeElement) && !ui.overlay;
+    if (vv && !focused) kbBase = Math.max(kbBase, window.innerHeight);   // 키보드 없을 때의 높이를 기억(주소창 접힘 포함)
+    var open = focused && (vv ? (Math.max(kbBase, window.innerHeight) - vv.height > 120) : true);
+    document.body.classList.toggle('kb', open);
+  }
+  document.addEventListener('focusin', function () { setTimeout(kbPaint, 60); setTimeout(kbPaint, 400); });
+  document.addEventListener('focusout', function () { setTimeout(kbPaint, 80); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', kbPaint);
+  window.addEventListener('orientationchange', function () { kbBase = 0; setTimeout(function () { kbBase = window.innerHeight; kbPaint(); }, 400); });
+
   // ── 고정 요소 연결 ───────────────────────
   $('btn-refresh').appendChild(icon('refresh'));
+  $('btn-opt').appendChild(icon('sliders'));
   $('sh-close').appendChild(icon('close'));
+  $('opt-close').appendChild(icon('close'));
 
   $('btn-refresh').addEventListener('click', function () { M.refresh(); });
+  $('btn-opt').addEventListener('click', openOptions);
+  $('opt-close').addEventListener('click', function () { closeOverlay(); });
   $('btn-band-retry').addEventListener('click', function () { M.refresh(); });
   $('btn-external').addEventListener('click', function () { M.openExternal(); });
   $('btn-login').addEventListener('click', function () {
@@ -1456,39 +1898,54 @@
     e.preventDefault();
   });
 
+  $('todo-add').addEventListener('pointerdown', function () {
+    ui.refocusTodo = document.activeElement === $('todo-t');
+  });
   $('todo-add').addEventListener('click', addTodo);
   $('todo-t').addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); addTodo(); }
   });
+  Array.prototype.forEach.call(document.querySelectorAll('#todo-form .chip'), function (b) {
+    b.addEventListener('click', function () {
+      var d = b.getAttribute('data-due');
+      $('todo-due').value = d === '' ? '' : addDays(today(), +d);
+      dueChips();
+    });
+  });
+  $('todo-due').addEventListener('change', dueChips);
+  $('todo-due').addEventListener('input', dueChips);
   $('memo-add').addEventListener('click', addMemo);
 
-  $('sh-close').addEventListener('click', function () { closeSheet(); });
+  $('act-clear').addEventListener('click', onActClear);
+  $('act-set').addEventListener('click', openSheetMany);
+
+  $('sh-close').addEventListener('click', function () { closeOverlay(); });
   $('sh-save').addEventListener('click', saveAttend);
   $('sh-clear').addEventListener('click', clearAttend);
   $('sh-tadd').addEventListener('click', addTalk);
   $('sh-why').addEventListener('input', function () { if (ui.sheet) ui.sheet.why = this.value; });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && ui.sheet) closeSheet();
+    if (e.key === 'Escape' && ui.overlay) closeOverlay();
   });
   window.addEventListener('popstate', function () {
     if (ui.ignorePop) { ui.ignorePop = false; return; }
-    if (ui.sheet) closeSheet(true);
+    if (ui.overlay) closeOverlay(true);
   });
 
   $('pbar-btn').addEventListener('click', function () {
     ui.pbarOpen = !ui.pbarOpen;
-    renderPbar(S().phase === 'ready' && !!S().view);
+    renderPbar(isReady());
   });
 
-  // 새로 고침 뒤 남은 시트 기록은 지운다
+  // 새로 고침 뒤 남은 덮는 판 기록은 지운다
   try {
-    if (window.history.state && window.history.state.td2sheet) window.history.replaceState(null, '');
+    var hs = window.history.state;
+    if (hs && (hs.td2ov || hs.td2sheet)) window.history.replaceState(null, '');
   } catch (e) { /* 무시 */ }
 
   M.on(schedule);
   render();
   M.start();
-  // 지금 교시·«N분 전»을 30초마다 다시 계산
   setInterval(schedule, 30000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) schedule(); });
 })();

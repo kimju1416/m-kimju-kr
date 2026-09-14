@@ -264,7 +264,7 @@
     set({ busy: true });
     flush().then(loadView).then(function () { set({ busy: false }); schedule(); }, failTo);
   }
-  var TYPES = { 'todo.add': 1, 'todo.done': 1, 'memo.add': 1, 'attend.set': 1, 'attend.clear': 1, 'snote.add': 1 };
+  var TYPES = { 'todo.add': 1, 'todo.done': 1, 'memo.add': 1, 'attend.set': 1, 'attend.clear': 1, 'attend.setMany': 1, 'attend.clearMany': 1, 'snote.add': 1 };
   function op(type, p) {
     if (!TYPES[type]) throw new Error('모르는 입력 종류: ' + type);
     var o = { id: rid(), type: type, p: clone(p || {}), at: new Date().toISOString(), status: 'queued' };
