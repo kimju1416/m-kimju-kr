@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://cdn.jsdelivr.net; font-src https://cdn.jsdelivr.net; connect-src 'self' https://www.googleapis.com https://openidconnect.googleapis.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="TD2 폰">
+<meta name="format-detection" content="telephone=no">
+<title>TD2 폰</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- 머리띠 + 탭 (위에 붙음) -->
+  <div class="top" id="top">
+    <header class="hd">
+      <div class="id">TEACHERDESK / MOBILE</div>
+      <div class="hd-r">
+        <div class="st">
+          <span class="st1" id="hd-school"></span>
+          <span class="st2" id="hd-sync"></span>
+        </div>
+        <button class="hd-btn" id="btn-refresh" type="button" aria-label="PC 자료 다시 받기" hidden></button>
+      </div>
+    </header>
+    <div class="tabs" role="tablist" id="tabs" hidden>
+      <button class="tab" type="button" role="tab" id="tab-cal" data-tab="cal" aria-controls="v-cal" aria-selected="true">캘린더</button>
+      <button class="tab" type="button" role="tab" id="tab-today" data-tab="today" aria-controls="v-today" aria-selected="false">오늘</button>
+      <button class="tab" type="button" role="tab" id="tab-memo" data-tab="memo" aria-controls="v-memo" aria-selected="false">메모</button>
+      <button class="tab" type="button" role="tab" id="tab-stu" data-tab="stu" aria-controls="v-stu" aria-selected="false" hidden>학생</button>
+    </div>
+  </div>
+
+  <!-- 알림 띠 -->
+  <div class="band warn" id="band-inapp" hidden>
+    <p class="band-tx">카카오톡 안에서 열렸습니다 — 구글 로그인이 막힐 수 있어요</p>
+    <button class="band-btn" id="btn-external" type="button">기본 브라우저로 열기</button>
+  </div>
+  <div class="band warn" id="band-err" hidden>
+    <p class="band-tx" id="band-err-tx"></p>
+    <button class="band-btn" id="btn-band-retry" type="button">다시 시도</button>
+  </div>
+  <div class="band info" id="band-stale" hidden>
+    <p class="band-tx" id="band-stale-tx"></p>
+  </div>
+
+  <!-- 불러오는 중 -->
+  <section class="screen" id="scr-boot" hidden>
+    <p class="boot-line"><span class="spin-dot" aria-hidden="true"></span>불러오는 중</p>
+  </section>
+
+  <!-- 로그인 -->
+  <section class="screen" id="scr-login" hidden>
+    <h1 class="scr-title">TD2 폰</h1>
+    <p class="scr-p">PC TeacherDesk2의 할 일·일정·시간표·메모를 폰에서 보고 적습니다. PC와 같은 구글 계정으로 로그인하세요. 자료는 선생님 구글 드라이브의 앱 전용 숨김 칸에만 있습니다.</p>
+    <button class="pbtn" id="btn-login" type="button">구글로 로그인</button>
+    <p class="scr-note">허락 화면에 ‘구글 드라이브’ 칸이 있으면 켠 뒤 허용해 주세요</p>
+  </section>
+
+  <!-- 오류 -->
+  <section class="screen" id="scr-error" hidden>
+    <h1 class="scr-title sm" id="err-title"></h1>
+    <p class="scr-p" id="err-desc"></p>
+    <ol class="steps" id="err-steps" hidden></ol>
+    <button class="pbtn" id="btn-err-act" type="button"></button>
+    <div class="acct">
+      <span class="acct-mail" id="err-email"></span>
+      <button class="tbtn" id="btn-logout-err" type="button">로그아웃</button>
+    </div>
+  </section>
+
+  <!-- 본 화면 -->
+  <main class="main" id="scr-ready" hidden>
+
+    <!-- 1) 캘린더 -->
+    <section class="view" id="v-cal" role="tabpanel" aria-labelledby="tab-cal">
+      <div id="cal-month"></div>
+      <div id="cal-day"></div>
+      <div id="cal-up"></div>
+      <div id="cal-dday"></div>
+      <div id="cal-todo"></div>
+      <div class="form-row" id="todo-form">
+        <label class="sr" for="todo-t">새 할 일</label>
+        <input class="inp" id="todo-t" type="text" maxlength="200" placeholder="새 할 일" autocomplete="off" enterkeyhint="done">
+        <div class="form-sub">
+          <label class="sr" for="todo-due">마감 날짜 (선택)</label>
+          <input class="inp date" id="todo-due" type="date">
+          <button class="sbtn" id="todo-add" type="button">추가</button>
+        </div>
+        <p class="form-err" id="todo-err" hidden></p>
+      </div>
+    </section>
+
+    <!-- 2) 오늘 -->
+    <section class="view" id="v-today" role="tabpanel" aria-labelledby="tab-today" hidden>
+      <div id="td-bar"></div>
+      <div id="td-now"></div>
+      <div id="td-tt"></div>
+      <div id="td-meal"></div>
+      <div id="td-prog"></div>
+      <div id="td-ot"></div>
+    </section>
+
+    <!-- 3) 메모 -->
+    <section class="view" id="v-memo" role="tabpanel" aria-labelledby="tab-memo" hidden>
+      <div class="sec"><h2>메모 쓰기</h2><span class="r">PC 첫 메모 카드에 들어갑니다</span></div>
+      <div class="form-row">
+        <label class="sr" for="memo-t">메모 내용</label>
+        <textarea class="inp area" id="memo-t" maxlength="2000" rows="3" placeholder="메모 내용"></textarea>
+        <button class="pbtn in" id="memo-add" type="button">메모 저장</button>
+        <p class="form-err" id="memo-err" hidden></p>
+      </div>
+      <div id="memo-list"></div>
+    </section>
+
+    <!-- 4) 학생 -->
+    <section class="view" id="v-stu" role="tabpanel" aria-labelledby="tab-stu" hidden>
+      <div id="stu-bar"></div>
+      <div id="stu-list"></div>
+    </section>
+
+  </main>
+
+  <!-- 학생 시트 (명렬 위로 덮는 판) -->
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-title" hidden>
+    <div class="sh-hd">
+      <h2 class="sh-title" id="sh-title"></h2>
+      <button class="hd-btn" id="sh-close" type="button" aria-label="닫기"></button>
+    </div>
+    <div class="sh-body" id="sh-body">
+      <div class="sec"><h2>출결</h2><span class="r" id="sh-now"></span></div>
+      <div class="ed">
+        <div class="ed-lb" id="lb-g">구분</div>
+        <div class="seg" id="sh-g" role="group" aria-labelledby="lb-g"></div>
+        <div class="ed-lb" id="lb-k">종류</div>
+        <div class="seg" id="sh-k" role="group" aria-labelledby="lb-k"></div>
+        <div class="ed-lb" id="lb-p">교시</div>
+        <div class="slots" id="sh-p" role="group" aria-labelledby="lb-p"></div>
+        <label class="ed-lb" for="sh-why">사유</label>
+        <input class="inp" id="sh-why" type="text" maxlength="200" placeholder="사유 (선택)" autocomplete="off">
+        <p class="form-err" id="sh-err" hidden></p>
+        <button class="pbtn in" id="sh-save" type="button">저장</button>
+        <button class="obtn" id="sh-clear" type="button">출석으로 되돌리기</button>
+      </div>
+
+      <div class="sec"><h2>상담기록</h2><span class="r" id="sh-talk-n"></span></div>
+      <p class="caution">상담기록은 PC 화면에서만 보던 자료입니다. 폰을 다른 사람에게 보여 줄 때 주의하세요.</p>
+      <div class="ed">
+        <label class="ed-lb" for="sh-td">상담 날짜</label>
+        <input class="inp date" id="sh-td" type="date">
+        <label class="ed-lb" for="sh-tt">상담 내용</label>
+        <textarea class="inp area" id="sh-tt" maxlength="1000" rows="3" placeholder="상담 내용"></textarea>
+        <p class="form-err" id="sh-terr" hidden></p>
+        <button class="pbtn in" id="sh-tadd" type="button">상담 기록 추가</button>
+      </div>
+      <div id="sh-talk"></div>
+    </div>
+  </div>
+
+  <!-- PC 반영 대기 띠 -->
+  <div class="pbar" id="pbar" hidden>
+    <div class="pbar-list" id="pbar-list" hidden></div>
+    <button class="pbar-btn" id="pbar-btn" type="button" aria-expanded="false" aria-controls="pbar-list"></button>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</div>
+
+<script src="./core.js"></script>
+<script src="./ui.js"></script>
+</body>
+</html>
