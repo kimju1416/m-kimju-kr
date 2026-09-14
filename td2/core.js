@@ -193,7 +193,13 @@
         });
       });
     });
-    return chain.then(function () { flushing = false; schedule(); }, function (e) {
+    /* 🔴 올리는 동안 새로 적은 것은 이번 차례에 안 들어 있다 — 끝나자마자 한 번 더 돌린다.
+       안 그러면 여러 개를 연달아 적을 때 뒤엣것들이 새로 받기(20초)까지 «올리기 대기»에 머문다(끝까지 검사에서 잡음) */
+    return chain.then(function () {
+      flushing = false;
+      if (tok() && state.pending.some(function (o) { return o.status === 'queued'; })) return flush();
+      schedule();
+    }, function (e) {
       flushing = false;
       if (e.code === 'auth') { if (!silent()) set({ phase: 'login', err: '', errCode: '' }); return; }
       if (e.code === 'no-drive') { set({ phase: 'error', errCode: 'no-drive', err: e.message }); return; }
@@ -264,7 +270,11 @@
     set({ busy: true });
     flush().then(loadView).then(function () { set({ busy: false }); schedule(); }, failTo);
   }
-  var TYPES = { 'todo.add': 1, 'todo.done': 1, 'memo.add': 1, 'attend.set': 1, 'attend.clear': 1, 'attend.setMany': 1, 'attend.clearMany': 1, 'snote.add': 1 };
+  var TYPES = {
+    'todo.add': 1, 'todo.done': 1, 'todo.edit': 1, 'todo.del': 1, 'memo.add': 1, 'memo.edit': 1, 'memo.del': 1,
+    'event.add': 1, 'event.done': 1, 'dday.add': 1, 'ot.set': 1, 'prog.set': 1, 'prog.clear': 1,
+    'attend.set': 1, 'attend.clear': 1, 'attend.setMany': 1, 'attend.clearMany': 1, 'snote.add': 1, 'snote.act': 1
+  };
   function op(type, p) {
     if (!TYPES[type]) throw new Error('모르는 입력 종류: ' + type);
     var o = { id: rid(), type: type, p: clone(p || {}), at: new Date().toISOString(), status: 'queued' };

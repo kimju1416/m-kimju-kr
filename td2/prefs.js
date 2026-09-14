@@ -1,6 +1,7 @@
 /* prefs.js — 폰마다 저장한 화면 설정(localStorage 'td2m:ui')을 첫 그림 전에 적용한다.
    <head>에서 동기로 읽힌다(인라인 스크립트는 CSP로 막혀 있어 파일로 둔다).
-   ui.js는 window.TD2PREFS로 읽고 바꾼다. 학생 자료는 여기에 넣지 않는다. */
+   ui.js는 window.TD2PREFS로 읽고 바꾼다. 학생 자료는 여기에 넣지 않는다.
+   «앱으로 설치» 이벤트(beforeinstallprompt)도 여기서 먼저 받아 둔다 — ui.js가 읽히기 전에 올 수 있어서. */
 (function () {
   'use strict';
 
@@ -34,7 +35,9 @@
   var SIZES = [{ id: 's', nm: '작게' }, { id: 'm', nm: '보통' }, { id: 'l', nm: '크게' }];
   var STARTS = [{ id: 'last', nm: '마지막' }, { id: 'cal', nm: '캘린더' }, { id: 'today', nm: '오늘' }, { id: 'memo', nm: '메모' }, { id: 'stu', nm: '학생' }];
   var TABS = ['cal', 'today', 'memo', 'stu'];
-  var DEF = { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal' };
+  // calWeekend: 달력에 토·일 칸 · calWeekNo: 달력 줄 왼쪽에 «1주·2주»
+  // visits: 이 폰에서 자료를 받은 횟수(설치 권하기용) · installNo: 설치 권하기를 닫았거나 설치함
+  var DEF = { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', calWeekend: true, calWeekNo: false, visits: 0, installNo: false };
 
   function find(list, id) {
     for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
@@ -48,11 +51,15 @@
       font: find(FONTS, o.font) ? o.font : DEF.font,
       size: find(SIZES, o.size) ? o.size : DEF.size,
       start: find(STARTS, o.start) ? o.start : DEF.start,
-      tab: TABS.indexOf(o.tab) >= 0 ? o.tab : DEF.tab
+      tab: TABS.indexOf(o.tab) >= 0 ? o.tab : DEF.tab,
+      calWeekend: o.calWeekend !== false,
+      calWeekNo: o.calWeekNo === true,
+      visits: (typeof o.visits === 'number' && isFinite(o.visits) && o.visits > 0) ? Math.min(999, Math.floor(o.visits)) : 0,
+      installNo: o.installNo === true
     };
   }
   function copy(p) {
-    return { theme: p.theme, accent: p.accent, font: p.font, size: p.size, start: p.start, tab: p.tab };
+    return { theme: p.theme, accent: p.accent, font: p.font, size: p.size, start: p.start, tab: p.tab, calWeekend: p.calWeekend, calWeekNo: p.calWeekNo, visits: p.visits, installNo: p.installNo };
   }
   function read() {
     var o = null;
@@ -94,6 +101,24 @@
   var cur = read();
   apply(cur);
 
+  // ── 앱으로 설치 ─────────────────────────
+  var installEvt = null;
+  var installFns = [];
+  function fireInstall() {
+    installFns.slice().forEach(function (fn) { try { fn(); } catch (e) { /* 무시 */ } });
+  }
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();              // 크롬 기본 안내 대신 설정·작은 띠에서 권한다
+    installEvt = e;
+    fireInstall();
+  });
+  window.addEventListener('appinstalled', function () {
+    installEvt = null;
+    cur.installNo = true;
+    write(cur);
+    fireInstall();
+  });
+
   window.TD2PREFS = {
     KEY: KEY,
     THEMES: THEMES,
@@ -112,13 +137,16 @@
       return write(cur);
     },
     reset: function () {
-      cur = norm({ tab: cur.tab });
+      cur = norm({ tab: cur.tab, visits: cur.visits, installNo: cur.installNo });
       apply(cur);
       return write(cur);
     },
     // 설정 화면에서 글꼴 미리보기용 (글꼴 파일은 보이는 글자만큼만 받는다)
     loadAllFonts: function () {
       FONTS.forEach(function (f) { f.css.forEach(addCss); });
-    }
+    },
+    installEvent: function () { return installEvt; },
+    clearInstallEvent: function () { installEvt = null; },
+    onInstall: function (fn) { if (typeof fn === 'function') installFns.push(fn); }
   };
 })();
