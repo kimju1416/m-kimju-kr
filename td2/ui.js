@@ -21,10 +21,10 @@
     return;
   }
 
-  var UI_VER = 'm5 · 2026-09-15';
+  var UI_VER = 'm6 · 2026-09-15';
   var PR = window.TD2PREFS || null;
   function prefs() {
-    return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, visits: 0, installNo: true };
+    return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true };
   }
   function setPref(patch) { if (PR) PR.set(patch); }
 
@@ -541,7 +541,10 @@
     var m = attendModel();
     var slots = m ? m.slots : [];
     var ps = arr(rec.p);
-    var s = (slots.length && ps.length === slots.length) ? '전체' : ps.map(slotShort).join('·');
+    // «조회·1»은 무엇인지 모호했다 → 마지막 숫자 뒤에만 «교시»를 붙인다(«조회·1교시», «6·7교시·종례», «1·2·3교시»)
+    var names = ps.map(slotShort);
+    for (var ni = names.length - 1; ni >= 0; ni--) { if (/^\d+$/.test(names[ni])) { names[ni] += '교시'; break; } }
+    var s = (slots.length && ps.length === slots.length) ? '전체' : names.join('·');
     return [rec.g, rec.k].filter(Boolean).join(' ') + (s ? ' · ' + s : '');
   }
 
@@ -728,6 +731,9 @@
     ui.tab = t;
     ui.sel = null;
     ui.clearArm = 0;
+    // 앞 탭에서 뜬 알림(«할 일을 적었습니다»)이 다른 탭에 남아 있지 않게
+    $('toast').hidden = true;
+    clearTimeout(ui.toastTimer);
     setPref({ tab: t });
     render();
     window.scrollTo(0, ui.scroll[t] || 0);
@@ -797,7 +803,19 @@
   }
 
   // ── 1) 캘린더 ───────────────────────────
+  /* 캘린더 탭 차례(설정) — «일정 먼저»(기본): 달력→그날→다가오는→D-Day→할 일 / «할 일 먼저»: 달력→그날→할 일→다가오는→D-Day.
+     칸을 새로 만들지 않고 할 일 묶음(제목 줄·적기 줄·목록) 세 덩어리만 옮긴다. 이미 제자리면 안 건드린다(적는 중 초점이 빠지지 않게) */
+  function placeCalTodo() {
+    var vc = $('v-cal'), up = $('cal-up'), cnt = $('todo-count');
+    var head = cnt && cnt.parentNode, form = $('todo-form'), list = $('cal-todo');
+    if (!vc || !up || !head || !form || !list) return;
+    var first = prefs().calOrder === 'todo';
+    if (first ? list.nextElementSibling === up : vc.lastElementChild === list) return;
+    [head, form, list].forEach(function (el) { if (first) vc.insertBefore(el, up); else vc.appendChild(el); });
+  }
+
   function renderCal() {
+    placeCalTodo();
     var t = today();
     var from = rangeFrom(), to = rangeTo();
     if (!ui.calSel) ui.calSel = clampDay(t, from, to);
@@ -1269,7 +1287,8 @@
       inp.value = '';
       if (!ui.calPicked) todoDP.set('');
       formErr('todo-err', '');
-      toast('할 일을 적었습니다 · PC 반영 대기');
+      // 날짜를 눌러 본 날이 마감으로 들어가는 것을 알 수 있게 알림에 마감을 적는다
+      toast((due ? dayLabel(due) + ' 마감 · ' : '') + '할 일을 적었습니다 · PC 반영 대기');
     }
     if (keep) inp.focus();
   }
@@ -1289,9 +1308,34 @@
     clear(nowBox);
     if (ds === t) nowBox.appendChild(nowPanel(periods, new Date()));
     renderTimetable(ds, t, d, periods);
-    renderMeal(d);
+    renderTodayTodo(ds, t);
+    // 급식·초과근무 칸은 폰 설정으로 끌 수 있다(09-15 형님 «안 먹는 사람·초과 거의 안 하는 샘도 많거든»). 진도는 끄기 없음
+    var pf = prefs();
+    if (pf.showMeal !== false) renderMeal(d); else clear($('td-meal'));
     renderProg(ds, d);
-    renderOt();
+    if (pf.showOt !== false) renderOt(); else clear($('td-ot'));
+  }
+
+  /* [오늘] 탭 «오늘 할 일» — 시간표 아래(09-15 형님이 자리 정함). 첫 화면인 캘린더에선 할 일이 두 화면 아래라 급한 일이 안 보였다.
+     안 끝냈고 마감이 오늘이거나 지난 것만 · 해당하는 게 없으면 칸째 안 그림 · 많으면 5개와 «캘린더에서 전체 보기» */
+  var TODAY_TODO_MAX = 5;
+  function renderTodayTodo(ds, t) {
+    var box = $('td-todo');
+    if (!box) return;                                   // 판이 섞인 몇 분 — 옛 index.html엔 칸이 없다
+    clear(box);
+    if (ds !== t) return;
+    var list = dispTodos().filter(function (x) { return !x.srcDone && !x.del && isYmd(x.due) && x.due <= t; })
+      .sort(function (a, b) { return a.due < b.due ? -1 : (a.due > b.due ? 1 : 0); });
+    if (!list.length) return;
+    var late = list.filter(function (x) { return x.due < t; }).length;
+    box.appendChild(sec('오늘 할 일', (late ? '지난 마감 ' + late + ' · ' : '') + list.length + '건', late > 0));
+    list.slice(0, TODAY_TODO_MAX).forEach(function (x) { box.appendChild(todoRow(x, t)); });
+    var more = list.length - TODAY_TODO_MAX;
+    var go = btn('done-tog', null, function () { setTab('cal'); scrollToEl($('todo-count')); });
+    // 🔴 아이콘(svg)을 넣으면 이 줄 모양(done-tog)엔 크기 규칙이 없어 화면 절반만 한 화살표로 그려졌다(캡처로 봄) — 글자 두 칸으로(«끝낸 할 일 N건 | 접기»와 같은 꼴)
+    go.appendChild(h('span', '', more > 0 ? '나머지 ' + more + '건 · 캘린더에서 전체 보기' : '캘린더에서 할 일 전체'));
+    go.appendChild(h('span', '', '보기'));
+    box.appendChild(go);
   }
 
   function dayBar(box, ds, t, min, max, go) {
@@ -1338,6 +1382,15 @@
     return { kind: 'after', last: lastClass };
   }
 
+  // «다음» 안내 — 바로 다음이 공강·점심이면 그다음 **수업**을 알려 준다(알고 싶은 것은 다음 수업, 09-15 검수)
+  function nextText(ps, from) {
+    if (!from) return '';
+    var i = ps.indexOf(from), nx = null;
+    for (var j = Math.max(0, i); j < ps.length; j++) { if (!ps[j].lunch && ps[j].subj) { nx = ps[j]; break; } }
+    if (!nx || nx === from) return '다음 ' + pName(from) + ' ' + from.s;
+    return '다음 수업 ' + nx.p + '교시 ' + nx.subj + ' ' + nx.s;
+  }
+
   function nowPanel(ps, now) {
     var info = nowInfo(ps, now);
     var pan = h('div', 'nowpan');
@@ -1351,18 +1404,18 @@
       rg = info.cur.s + ' – ' + info.cur.e;
       ratio = info.ratio;
       left = ['남은 ', fmtMin(info.left)];
-      right = info.next ? '다음 ' + pName(info.next) + ' ' + info.next.s : '마지막 수업';
+      right = info.next ? nextText(ps, info.next) : '마지막 수업';
     } else if (info.kind === 'lunch') {
       n = '점심'; u = '';
       sj = '점심 시간';
       rg = info.cur.s + ' – ' + info.cur.e;
       ratio = info.ratio;
       left = ['남은 ', fmtMin(info.left)];
-      right = info.next ? '다음 ' + pName(info.next) + ' ' + info.next.s : '';
+      right = info.next ? nextText(ps, info.next) : '';
     } else if (info.kind === 'break') {
       n = '–'; u = '쉬는 시간';
       sj = '쉬는 시간';
-      rg = '다음 ' + pName(info.next) + ' ' + info.next.s;
+      rg = nextText(ps, info.next);
       ratio = info.ratio;
       left = ['', fmtMin(info.left) + ' 뒤 시작'];
     } else if (info.kind === 'before') {
@@ -1658,7 +1711,7 @@
         if (!counts[a.rec.k]) { counts[a.rec.k] = 0; order.push(a.rec.k); }
         counts[a.rec.k]++;
       }
-      return { st: st, a: a, talk: noteList('talk', c.cls, st.key, st.name).length };
+      return { st: st, a: a };
     });
     var summary = order.length ? order.map(function (k) { return k + ' ' + counts[k]; }).join(' · ') : '모두 출석';
     box.appendChild(sec(c.cls + ' 출결 · ' + dayLabel(ds), summary, order.length > 0));
@@ -1697,7 +1750,7 @@
     rows.forEach(function (r) {
       var st = r.st, a = r.a;
       var b;
-      var label = st.no + '번 ' + st.name + ', ' + recText(a.rec) + (a.mark ? ', ' + MARK[a.mark] : '') + (r.talk ? ', 상담 ' + r.talk + '건' : '');
+      var label = st.no + '번 ' + st.name + ', ' + recText(a.rec) + (a.mark ? ', ' + MARK[a.mark] : '');
       if (ui.sel) {
         var on = !!ui.sel.keys[st.key];
         b = btn('ros', null, function () {
@@ -1717,7 +1770,7 @@
       var sm = h('span', 'sm' + (a.rec ? '' : ' gray'), recText(a.rec));
       if (a.mark) sm.appendChild(markEl(a.mark, true));
       b.appendChild(sm);
-      if (r.talk) b.appendChild(h('span', 'tk', '상담 ' + r.talk));
+      // 명렬 줄의 «상담 N» 표시는 뺐다 — 수업 중 출결을 넣다 보면 누가 상담받았는지 옆 학생에게 보였다(09-15 검수). 상담 수는 학생 시트 안에서만
       if (!ui.sel) b.appendChild(icon('right'));
       b.setAttribute('aria-label', label);
       box.appendChild(b);
@@ -1751,6 +1804,12 @@
       bar.appendChild(b);
     });
     box.appendChild(bar);
+    // 반이 많으면 한 줄 가로로 넘긴다 — 고른 반이 화면 밖이면 보이게 끌어온다(세로로는 안 움직인다)
+    var on = bar.querySelector('[aria-pressed="true"]');
+    if (on && bar.scrollWidth > bar.clientWidth) {
+      var l = on.getBoundingClientRect().left - bar.getBoundingClientRect().left + bar.scrollLeft;
+      if (l + on.offsetWidth > bar.clientWidth) bar.scrollLeft = Math.max(0, l - 8);
+    }
   }
 
   function renderActbar(ready) {
@@ -1840,7 +1899,7 @@
     $('sh-note-h').textContent = act ? '활동기록' : '상담기록';
     var cau = $('sh-note-caution');
     cau.textContent = act ? '활동기록은 생기부 쓸 때 PC에서 불러옵니다.' : '상담기록은 PC 화면에서만 보던 자료입니다. 폰을 다른 사람에게 보여 줄 때 주의하세요.';
-    cau.className = 'caution' + (act ? ' info' : '');
+    cau.className = 'caution info';   // 상담 주의문도 회색 — 빨강으로 매번 떠서 무뎌졌다(09-15 검수). 빨강은 덮어쓰기 경고(sh-warn)에만
     $('lb-td').textContent = act ? '활동 날짜' : '상담 날짜';
     $('lb-tt').textContent = act ? '활동 내용' : '상담 내용';
     $('sh-tt').placeholder = act ? '예: 학급 회의 사회를 맡아 의견을 정리함' : '상담 내용';
@@ -2404,8 +2463,31 @@
     var box = $('opt-prefs');
     clear(box);
     var p = prefs();
+    /* 차례(09-15 형님 «탭별로 순서대로»): ① 보기 편하게 ② 캘린더 탭 ③ 오늘 탭 ④ 학생 탭 ⑤ 탭·화면 동작 → [처음대로]
+       그 아래 앱으로 설치·계정·정보는 제 칸이 따로 그린다. 누구나 한 번씩 바꾸는 글자 크기를 맨 위에 둔다 */
+    function lb(t) { box.appendChild(h('p', 'opt-lb', t)); }
+    function foot(t) { box.appendChild(h('p', 'opt-foot', t)); }
+    function onOff(label, on, key) {
+      return segCols(radioGroup('segr', label, [{ id: 'on', nm: '보기' }, { id: 'off', nm: '안 보기' }], on ? 'on' : 'off', function (id) { var o = {}; o[key] = id === 'on'; pickPref(o); }, textBtn), 2);
+    }
 
-    box.appendChild(sec('화면 색', nameOf(PR.THEMES, p.theme)));
+    // ① 보기 편하게
+    box.appendChild(sec('보기 편하게'));
+    lb('글자 크기');
+    /* 5단계는 한 줄에 안 들어가 두 줄 — 3칸 격자로 두면 둘째 줄 오른쪽이 빈칸으로 남아 어색했다(캡처로 봄).
+       6칸 격자에 첫 줄 2·2·2, 둘째 줄 3·3으로 꽉 채우고, 이 묶음 모양(segr)엔 줄 사이 선이 없어 첫 줄 아래에 긋는다 */
+    var sizeG = radioGroup('segr', '글자 크기', PR.SIZES, p.size, function (id) { pickPref({ size: id }); }, textBtn);
+    var sizeB = sizeG.querySelectorAll('button');
+    if (sizeB.length === 5) {
+      sizeG.style.gridTemplateColumns = 'repeat(6, minmax(0, 1fr))';
+      Array.prototype.forEach.call(sizeB, function (b, i) {
+        b.style.gridColumn = i < 3 ? 'span 2' : 'span 3';
+        if (i < 3) b.style.borderBottom = '1px solid var(--fg)';
+        if (i === 2) b.style.borderRight = '0';
+      });
+    } else segCols(sizeG, sizeB.length);          // 판이 섞인 몇 분 — 옛 prefs.js는 3단계
+    box.appendChild(sizeG);
+    lb('화면 색');
     box.appendChild(radioGroup('opt-grid th', '화면 색', PR.THEMES, p.theme, function (id) { pickPref({ theme: id }); }, function (b, it) {
       b.className = 'pick thb';
       var sw = h('span', 'sw');
@@ -2415,8 +2497,7 @@
       b.appendChild(sw);
       b.appendChild(h('span', '', it.nm));
     }));
-
-    box.appendChild(sec('강조색', nameOf(PR.ACCENTS, p.accent)));
+    lb('강조색');
     box.appendChild(radioGroup('opt-grid c3', '강조색', PR.ACCENTS, p.accent, function (id) { pickPref({ accent: id }); }, function (b, it) {
       b.className = 'pick acb';
       var i = h('i');
@@ -2424,44 +2505,51 @@
       b.appendChild(i);
       b.appendChild(h('span', '', it.nm));
     }));
-
-    box.appendChild(sec('글씨체', nameOf(PR.FONTS, p.font)));
+    lb('글씨체');
     box.appendChild(radioGroup('opt-grid c1', '글씨체', PR.FONTS, p.font, function (id) { pickPref({ font: id }); }, function (b, it) {
       b.className = 'pick fnb';
       b.appendChild(h('span', 'pv ff-' + it.id, '가나다 출결 09:50'));
       b.appendChild(h('span', 'nt', it.nm + ' · ' + it.note));
     }));
-    box.appendChild(h('p', 'opt-foot', '글꼴을 받지 못하면 기기 기본 글꼴로 보입니다.'));
+    foot('글꼴을 받지 못하면 기기 기본 글꼴로 보입니다.');
 
-    box.appendChild(sec('글자 크기', nameOf(PR.SIZES, p.size)));
-    box.appendChild(radioGroup('segr', '글자 크기', PR.SIZES, p.size, function (id) { pickPref({ size: id }); }, textBtn));
-
-    box.appendChild(sec('첫 화면', nameOf(PR.STARTS, p.start)));
-    var starts = radioGroup('segr', '첫 화면', PR.STARTS, p.start, function (id) { pickPref({ start: id }); }, textBtn);
-    starts.style.gridTemplateColumns = 'repeat(' + PR.STARTS.length + ', minmax(0, 1fr))';
-    box.appendChild(starts);
-    box.appendChild(h('p', 'opt-foot', '«마지막»은 지난번에 보던 탭으로 엽니다.'));
-
-    box.appendChild(sec('아래 탭', nameOf(PR.NAVS, p.navMode)));
-    box.appendChild(segCols(radioGroup('segr', '아래 탭', PR.NAVS, p.navMode, function (id) { pickPref({ navMode: id }); }, textBtn), 3));
-    box.appendChild(h('p', 'opt-foot', '«맨 아래에서만»은 글 끝까지 내리면 보이고, «올리면 나타나기»는 내릴 때 숨었다가 조금 올리면 나타납니다. 네 탭이 모두 같게 움직입니다.'));
-
-    box.appendChild(sec('상단바 색', nameOf(PR.BARS, p.barColor)));
-    box.appendChild(segCols(radioGroup('segr', '상단바 색', PR.BARS, p.barColor, function (id) { pickPref({ barColor: id }); }, textBtn), 2));
-    box.appendChild(h('p', 'opt-foot', '시간·통신사가 보이는 맨 위 줄 색입니다. 아이폰은 바꾼 뒤 홈 화면 아이콘을 지우고 다시 추가해야 바뀝니다.'));
-
-    box.appendChild(sec('달력'));
-    box.appendChild(h('p', 'opt-lb', '크기'));
+    // ② 캘린더 탭
+    box.appendChild(sec('캘린더 탭'));
+    lb('순서');
+    var orders = PR.CALORDERS || [{ id: 'ev', nm: '일정 먼저' }, { id: 'todo', nm: '할 일 먼저' }];   // 판이 섞인 몇 분 — 옛 prefs.js엔 없다
+    box.appendChild(segCols(radioGroup('segr', '캘린더 순서', orders, p.calOrder || 'ev', function (id) { pickPref({ calOrder: id }); }, textBtn), 2));
+    foot('«할 일 먼저»는 달력 → 그날 일정 → 할 일 → 다가오는 일정 → D-Day 차례입니다.');
+    lb('달력 크기');
     box.appendChild(segCols(radioGroup('segr', '달력 크기', PR.CALSIZES, p.calSize, function (id) { pickPref({ calSize: id }); }, textBtn), 3));
-    box.appendChild(h('p', 'opt-lb', '토·일'));
-    var wk = radioGroup('segr', '달력 토·일', [{ id: 'on', nm: '토·일 넣기' }, { id: 'off', nm: '토·일 빼기' }], p.calWeekend ? 'on' : 'off', function (id) { pickPref({ calWeekend: id === 'on' }); }, textBtn);
-    wk.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-    box.appendChild(wk);
-    box.appendChild(h('p', 'opt-lb', '주 표시'));
-    var wn = radioGroup('segr', '달력 주 표시', [{ id: 'off', nm: '끄기' }, { id: 'on', nm: '«1주·2주» 켜기' }], p.calWeekNo ? 'on' : 'off', function (id) { pickPref({ calWeekNo: id === 'on' }); }, textBtn);
-    wn.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-    box.appendChild(wn);
-    box.appendChild(h('p', 'opt-foot', '토·일을 빼면 주말 일정은 금요일 칸에 «주말 N»으로 보이고, 금요일을 누르면 목록에 나옵니다.'));
+    lb('토·일');
+    box.appendChild(segCols(radioGroup('segr', '달력 토·일', [{ id: 'on', nm: '토·일 넣기' }, { id: 'off', nm: '토·일 빼기' }], p.calWeekend ? 'on' : 'off', function (id) { pickPref({ calWeekend: id === 'on' }); }, textBtn), 2));
+    lb('주 표시');
+    box.appendChild(segCols(radioGroup('segr', '달력 주 표시', [{ id: 'off', nm: '끄기' }, { id: 'on', nm: '«1주·2주» 켜기' }], p.calWeekNo ? 'on' : 'off', function (id) { pickPref({ calWeekNo: id === 'on' }); }, textBtn), 2));
+    foot('토·일을 빼면 주말 일정은 금요일 칸에 «주말 N»으로 보이고, 금요일을 누르면 목록에 나옵니다.');
+
+    // ③ 오늘 탭 — 급식을 안 먹거나 초과근무를 거의 안 하는 선생님이 칸을 끈다. 진도는 교과 선생님 모두 써서 끄기 없음(09-15 형님)
+    box.appendChild(sec('오늘 탭'));
+    lb('급식');
+    box.appendChild(onOff('오늘 탭 급식', p.showMeal !== false, 'showMeal'));
+    lb('초과근무');
+    box.appendChild(onOff('오늘 탭 초과근무', p.showOt !== false, 'showOt'));
+    foot('초과근무를 끄면 폰에서 초과근무를 적는 칸도 숨습니다. PC에서는 그대로 적을 수 있어요.');
+
+    // ④ 학생 탭 — 폰에서 바꿀 것은 없다. 학생 탭이 비어 있을 때 어디서 켜는지 헤매지 않게 한 줄
+    box.appendChild(sec('학생 탭'));
+    foot('학생 자료는 PC 앱 설정 → [데이터] → 폰 연동 → [학생 자료도]를 켜면 명렬·출결·상담이 보입니다.');
+
+    // ⑤ 탭·화면 동작
+    box.appendChild(sec('탭·화면 동작'));
+    lb('첫 화면');
+    box.appendChild(segCols(radioGroup('segr', '첫 화면', PR.STARTS, p.start, function (id) { pickPref({ start: id }); }, textBtn), PR.STARTS.length));
+    foot('«마지막»은 지난번에 보던 탭으로 엽니다.');
+    lb('아래 탭');
+    box.appendChild(segCols(radioGroup('segr', '아래 탭', PR.NAVS, p.navMode, function (id) { pickPref({ navMode: id }); }, textBtn), 3));
+    foot('«맨 아래에서만»은 글 끝까지 내리면 보이고, «올리면 나타나기»는 내릴 때 숨었다가 조금 올리면 나타납니다. 네 탭이 모두 같게 움직입니다.');
+    lb('상단바 색');
+    box.appendChild(segCols(radioGroup('segr', '상단바 색', PR.BARS, p.barColor, function (id) { pickPref({ barColor: id }); }, textBtn), 2));
+    foot('시간·통신사가 보이는 맨 위 줄 색입니다. 아이폰은 바꾼 뒤 홈 화면 아이콘을 지우고 다시 추가해야 바뀝니다.');
 
     var rs = h('div', 'opt-reset');
     rs.appendChild(btn('obtn', '화면 설정 처음대로', function () {

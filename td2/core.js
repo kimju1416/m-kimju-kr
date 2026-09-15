@@ -129,7 +129,7 @@
       if (!r.ok) {
         return r.text().then(function (t) {
           if (r.status === 403 && /insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(t)) throw gErr('no-drive', '구글 드라이브 허락이 없습니다');
-          throw gErr('http', '구글 드라이브 오류 ' + r.status);
+          throw gErr('http', '구글 드라이브에 잠시 연결하지 못했습니다(오류 ' + r.status + ') — [다시 시도]를 눌러 주세요');
         });
       }
       if (raw) return r.text();

@@ -35,7 +35,8 @@
     { id: 'nanum', nm: '나눔고딕', note: '처음 고를 때 받음', css: [FS + 'nanum-gothic@5.3.0/400.css', FS + 'nanum-gothic@5.3.0/700.css', FS + 'nanum-gothic@5.3.0/800.css'] },
     { id: 'plex', nm: 'IBM Plex Sans KR', note: '처음 고를 때 받음', css: [FS + 'ibm-plex-sans-kr@5.3.0/400.css', FS + 'ibm-plex-sans-kr@5.3.0/600.css', FS + 'ibm-plex-sans-kr@5.3.0/700.css'] }
   ];
-  var SIZES = [{ id: 's', nm: '작게' }, { id: 'm', nm: '보통' }, { id: 'l', nm: '크게' }];
+  // 글자 크기 5단계(09-15 형님 «지금 크기에 적응했으니 놔두고 5단계로 — 작은 걸 선호하는 사람도 있어»). s·m·l 값은 그대로라 누구 화면도 안 바뀐다
+  var SIZES = [{ id: 'xs', nm: '아주 작게' }, { id: 's', nm: '작게' }, { id: 'm', nm: '보통' }, { id: 'l', nm: '크게' }, { id: 'xl', nm: '아주 크게' }];
   var STARTS = [{ id: 'last', nm: '마지막' }, { id: 'cal', nm: '캘린더' }, { id: 'today', nm: '오늘' }, { id: 'memo', nm: '메모' }, { id: 'stu', nm: '학생' }];
   // 아래 탭: 늘 보이기 / 글 끝에서만 / 내리면 숨고 올리면 나타남
   var NAVS = [{ id: 'fixed', nm: '늘 보이기' }, { id: 'end', nm: '맨 아래에서만' }, { id: 'reveal', nm: '올리면 나타나기' }];
@@ -43,12 +44,15 @@
   // 🔴 이름만 맞바꿨다(09-15 형님 실제 폰: 누르는 쪽과 보이는 색이 반대) — id·저장값·색 넣는 코드는 그대로
   var BARS = [{ id: 'title', nm: '흰색' }, { id: 'white', nm: '제목과 같은 색' }];
   var CALSIZES = [{ id: 'm', nm: '보통' }, { id: 'l', nm: '크게' }, { id: 'xl', nm: '아주 크게' }];
+  // 캘린더 탭 차례 — 일정 먼저(지금 그대로, 기본) / 할 일 먼저(09-15 형님 «지금 순서 마음에 드는데 옵션으로»)
+  var CALORDERS = [{ id: 'ev', nm: '일정 먼저' }, { id: 'todo', nm: '할 일 먼저' }];
   var TABS = ['cal', 'today', 'memo', 'stu'];
   // calWeekend: 달력에 토·일 칸 · calWeekNo: 달력 줄 왼쪽에 «1주·2주»
   // visits: 이 폰에서 자료를 받은 횟수(설치 권하기용) · installNo: 설치 권하기 띠를 닫았거나 설치함(설정의 설치 칸은 늘 보임)
   var DEF = {
     theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal',
     navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false,
+    calOrder: 'ev', showMeal: true, showOt: true,     // 오늘 탭 급식·초과근무 칸(끄면 칸째 숨김)
     visits: 0, installNo: false
   };
 
@@ -70,6 +74,9 @@
       calSize: find(CALSIZES, o.calSize) ? o.calSize : DEF.calSize,
       calWeekend: o.calWeekend !== false,
       calWeekNo: o.calWeekNo === true,
+      calOrder: find(CALORDERS, o.calOrder) ? o.calOrder : DEF.calOrder,
+      showMeal: o.showMeal !== false,
+      showOt: o.showOt !== false,
       visits: (typeof o.visits === 'number' && isFinite(o.visits) && o.visits > 0) ? Math.min(999, Math.floor(o.visits)) : 0,
       installNo: o.installNo === true
     };
@@ -78,6 +85,7 @@
     return {
       theme: p.theme, accent: p.accent, font: p.font, size: p.size, start: p.start, tab: p.tab,
       navMode: p.navMode, barColor: p.barColor, calSize: p.calSize, calWeekend: p.calWeekend, calWeekNo: p.calWeekNo,
+      calOrder: p.calOrder, showMeal: p.showMeal, showOt: p.showOt,
       visits: p.visits, installNo: p.installNo
     };
   }
@@ -155,6 +163,7 @@
     NAVS: NAVS,
     BARS: BARS,
     CALSIZES: CALSIZES,
+    CALORDERS: CALORDERS,
     get: function () { return copy(cur); },
     set: function (patch) {
       var n = copy(cur);

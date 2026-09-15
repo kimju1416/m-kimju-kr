@@ -100,8 +100,11 @@ html {
   overscroll-behavior-y: contain;      /* 크롬 기본 «당겨서 페이지 새로 고침» 대신 자료만 새로 받기 */
   background: var(--bg);
 }
+/* 글자 크기 5단계 — 작게·보통·크게는 예전 값 그대로, 양 끝에 하나씩 */
+html[data-fs="xs"] { font-size: 87.5%; }
 html[data-fs="s"] { font-size: 93.75%; }
 html[data-fs="l"] { font-size: 112.5%; }
+html[data-fs="xl"] { font-size: 125%; }
 body {
   margin: 0; padding: 0;
   font-family: var(--f-ui);
@@ -151,7 +154,7 @@ button { -webkit-appearance: none; appearance: none; border-radius: 0; touch-act
 .b-mob { font-size: 10.5px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; color: var(--hd-fg2); }
 .hd-st {
   margin: 5px 0 0;
-  font-size: 11px; line-height: 1.25; color: var(--hd-fg2);
+  font-size: .6875rem; line-height: 1.25; color: var(--hd-fg2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 #hd-school { color: var(--hd-fg); font-weight: 600; }
@@ -311,12 +314,12 @@ body.kb .tabs, body.kb .pbar, body.kb .actbar, body.sel-mode .tabs { display: no
   background: var(--band); color: var(--fg);
   border-top: 1px solid var(--line2); border-bottom: 1px solid var(--line);
 }
-.sec h2 { flex: none; margin: 0; font-size: .71875rem; font-weight: 700; letter-spacing: .12em; }
+.sec h2 { flex: none; margin: 0; font-size: .71875rem; font-weight: 700; letter-spacing: .02em; }
 .sec .r { min-width: 0; font-size: .6875rem; color: var(--fg2); text-align: right; }
 .sec .r.hot { color: var(--acc); font-weight: 700; }
 .sub-sec {
   padding: 4px 10px; border-bottom: 1px solid var(--line); background: var(--bg);
-  font-size: .6875rem; font-weight: 700; letter-spacing: .1em; color: var(--fg2);
+  font-size: .6875rem; font-weight: 700; letter-spacing: .02em; color: var(--fg2);
 }
 .empty { margin: 0; padding: 11px 10px; border-bottom: 1px solid var(--line); font-size: .8125rem; color: var(--fg3); }
 .foot { margin: 0; padding: 5px 10px 9px; border-bottom: 1px solid var(--line); font-size: .6875rem; color: var(--fg3); }
@@ -371,7 +374,7 @@ body.kb .tabs, body.kb .pbar, body.kb .actbar, body.sel-mode .tabs { display: no
 .b.m { background: var(--fg); }
 .b.s { height: 5px; border: 1px solid var(--fg); background: var(--bg); }
 .b.g { background: var(--gcal); }
-.c .tn { position: absolute; right: 4px; top: 4px; font-family: var(--mono); font-size: 9.5px; color: var(--fg3); }
+.c .tn { position: absolute; right: 4px; top: 4px; font-family: var(--mono); font-size: .59375rem; color: var(--fg3); }
 .c.today { box-shadow: inset 0 0 0 2px var(--acc); }
 .c.today .dn { color: var(--acc); font-weight: 700; }
 .c.sel { background: var(--ink); }
@@ -386,7 +389,7 @@ table.t { width: 100%; border-collapse: collapse; table-layout: fixed; }
 table.t th {
   padding: 3px 6px; background: var(--band); color: var(--fg);
   border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
-  text-align: left; font-size: .65625rem; font-weight: 700; letter-spacing: .08em;
+  text-align: left; font-size: .65625rem; font-weight: 700; letter-spacing: .02em;
 }
 table.t td {
   padding: 6px 6px; vertical-align: top;
@@ -448,12 +451,12 @@ tr.done .ttl { color: var(--fg3); text-decoration: line-through; font-weight: 40
 
 /* 반영 표시 */
 .mk {
-  display: inline-block; padding: 0 4px; border: 1px solid var(--acc);
+  display: inline-block; padding: 0 4px; border: 1px solid var(--line2);
   font-family: var(--f-ui); font-size: .6875rem; font-weight: 600; line-height: 1.5; letter-spacing: 0;
-  color: var(--acc); white-space: nowrap; vertical-align: 1px;
+  color: var(--fg2); white-space: nowrap; vertical-align: 1px;
 }
 .mk.ok { border-color: var(--fg); color: var(--fg); }
-.mk.rej { background: var(--acc); color: var(--on-acc); }
+.mk.rej { border-color: var(--acc); background: var(--acc); color: var(--on-acc); }
 
 /* ── 지금 교시 패널 ──────────────────────── */
 .nowpan { display: flex; align-items: stretch; border-bottom: 1.5px solid var(--line2); }
@@ -488,9 +491,10 @@ tr.done .ttl { color: var(--fg3); text-decoration: line-through; font-weight: 40
 .memo .mt { margin-top: 5px; }
 
 /* ── 학생: 반 고르기 ─────────────────────── */
-.clsbar { display: flex; flex-wrap: wrap; border-bottom: 1.5px solid var(--line2); }
+.clsbar { display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; border-bottom: 1.5px solid var(--line2); }
+.clsbar::-webkit-scrollbar { display: none; }
 .clsb {
-  flex: 1 1 104px; min-width: 0; min-height: 54px; margin: 0; padding: 6px 10px;
+  flex: 1 0 104px; min-width: 104px; min-height: 54px; margin: 0; padding: 6px 10px;
   display: flex; flex-direction: column; justify-content: center; gap: 4px;
   border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
   background: var(--bg); color: var(--fg); text-align: left; cursor: pointer;
@@ -508,6 +512,7 @@ tr.done .ttl { color: var(--fg3); text-decoration: line-through; font-weight: 40
 }
 .tool .tx { flex: 1; min-width: 0; font-size: .78125rem; color: var(--fg2); }
 .tool .tx.on { color: var(--fg); font-weight: 700; }
+body.sel-mode .tool { position: sticky; top: calc(var(--hd-h) + var(--sat)); z-index: 5; }
 .tbtn2 {
   flex: none; min-width: 44px; min-height: 44px; padding: 0 12px;
   border: 1px solid var(--line2); background: var(--field); color: var(--fg);
@@ -574,12 +579,12 @@ tr.done .ttl { color: var(--fg3); text-decoration: line-through; font-weight: 40
   padding: var(--sat) calc(2px + var(--sar)) 0 calc(12px + var(--sal));
   background: var(--hd); color: var(--hd-fg);
 }
-.sh-title { flex: 1; min-width: 0; margin: 0; font-size: 15px; font-weight: 700; letter-spacing: .01em; line-height: 1.3; }
+.sh-title { flex: 1; min-width: 0; margin: 0; font-size: .9375rem; font-weight: 700; letter-spacing: .01em; line-height: 1.3; }
 .sh-body { padding-bottom: calc(48px + var(--sab)); }
 .sh-body .sec .r { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px 5px; font-size: .75rem; color: var(--fg); }
 .sh-names { margin: 0; padding: 9px calc(10px + var(--sar)) 10px calc(10px + var(--sal)); background: var(--band2); border-bottom: 1px solid var(--line); font-size: .84375rem; line-height: 1.65; }
 .ed { padding: 6px calc(10px + var(--sar)) 14px calc(10px + var(--sal)); }
-.ed-lb { display: block; margin: 12px 0 5px; font-size: .71875rem; font-weight: 700; letter-spacing: .08em; color: var(--fg); }
+.ed-lb { display: block; margin: 12px 0 5px; font-size: .71875rem; font-weight: 700; letter-spacing: .02em; color: var(--fg); }
 .seg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--fg); }
 .seg button {
   min-width: 0; min-height: 44px; padding: 0 2px; border: 0; border-right: 1px solid var(--fg);
@@ -593,7 +598,7 @@ tr.done .ttl { color: var(--fg3); text-decoration: line-through; font-weight: 40
   border-right: 1px solid var(--line2); border-bottom: 1px solid var(--line2);
   background: var(--field); color: var(--fg); font-size: .84375rem; cursor: pointer;
 }
-.slots button[aria-pressed="true"] { background: var(--acc); color: var(--on-acc); font-weight: 700; }
+.slots button[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); font-weight: 700; }
 .caution { margin: 0; padding: 8px calc(10px + var(--sar)) 8px calc(10px + var(--sal)); border-bottom: 1px solid var(--line); font-size: .78125rem; line-height: 1.55; color: var(--acc); }
 .talk { padding: 8px calc(10px + var(--sar)) 10px calc(10px + var(--sal)); border-bottom: 1px solid var(--line); }
 .talk:nth-child(even) { background: var(--band2); }
@@ -683,7 +688,7 @@ body.has-pbar .main { padding-bottom: calc(var(--nav-h) + var(--pbar-h) + var(--
   border: 0; background: var(--bg); color: var(--fg); text-align: left; cursor: pointer;
   font-size: .75rem; line-height: 1.35;
 }
-.pbar-btn .pn { flex: none; min-width: 24px; padding: 1px 5px; text-align: center; background: var(--ink); color: var(--on-ink); font-family: var(--mono); font-size: 12.5px; font-weight: 700; }
+.pbar-btn .pn { flex: none; min-width: 24px; padding: 1px 5px; text-align: center; background: var(--ink); color: var(--on-ink); font-family: var(--mono); font-size: .78125rem; font-weight: 700; }
 .pbar-btn.rej .pn { background: var(--acc); color: var(--on-acc); }
 .pbar-btn.rej .px { color: var(--acc); font-weight: 700; }
 .pbar-btn.ok .pn { background: var(--bg); color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
@@ -710,7 +715,8 @@ body.has-pbar .main { padding-bottom: calc(var(--nav-h) + var(--pbar-h) + var(--
   font-size: .875rem; line-height: 1.45; text-align: center;
 }
 body.has-pbar .toast { bottom: calc(var(--nav-h) + var(--pbar-h) + var(--sab) + 14px); }
-body.sheet-open .toast, body.kb .toast { bottom: calc(20px + var(--sab)); }
+body.sheet-open .toast { bottom: calc(20px + var(--sab)); }
+body.kb .toast { top: calc(var(--hd-h) + var(--sat) + 8px); bottom: auto !important; transform: none !important; }
 
 /* ══ v3 ═══════════════════════════════════════════════════ */
 
@@ -905,7 +911,7 @@ html[data-theme="hc"] { --t-mine: #E8E8E8; --t-sched: #FFFFFF; --t-gcal: #F2F2F2
 .mgrid { border-bottom: 1.5px solid var(--line2); }
 .mgrid .wn {
   border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--band2);
-  padding-top: 7px; text-align: center; font-size: 10px; font-weight: 700; line-height: 1.2; color: var(--fg2);
+  padding-top: 7px; text-align: center; font-size: .625rem; font-weight: 700; line-height: 1.2; color: var(--fg2);
 }
 .mgrid .c {
   position: static; display: flex; flex-direction: column; align-items: stretch; gap: 2px;
@@ -944,7 +950,7 @@ html[data-theme="hc"] { --t-mine: #E8E8E8; --t-sched: #FFFFFF; --t-gcal: #F2F2F2
 .bar .btm { display: none; flex: none; font-family: var(--mono); font-size: .5625rem; letter-spacing: -.02em; color: var(--fg2); }
 .mgrid.roomy .bar .btm { display: inline; }
 .bar.done .bt { color: var(--fg3); text-decoration: line-through; }
-.bar.wait { box-shadow: inset 0 0 0 1px var(--acc); }
+.bar.wait { box-shadow: inset 0 0 0 1px var(--fg2); }
 .mgrid .c .more, .mgrid .c .wkn {
   padding: 0 2px; font-size: .625rem; font-weight: 700; line-height: 1.4; color: var(--fg2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
