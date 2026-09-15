@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm10 · 2026-09-16';
+  var UI_VER = 'm11 · 2026-09-16';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -2817,9 +2817,6 @@
     lb('아래 탭');
     box.appendChild(segCols(radioGroup('segr', '아래 탭', PR.NAVS, p.navMode, function (id) { pickPref({ navMode: id }); }, textBtn), 3));
     foot('«맨 아래에서만»은 글 끝까지 내리면 보이고, «올리면 나타나기»는 내릴 때 숨었다가 조금 올리면 나타납니다. 네 탭이 모두 같게 움직입니다.');
-    lb('상단바 색');
-    box.appendChild(segCols(radioGroup('segr', '상단바 색', PR.BARS, p.barColor, function (id) { pickPref({ barColor: id }); }, textBtn), 2));
-    foot('시간·통신사가 보이는 맨 위 줄 색입니다. 아이폰은 바꾼 뒤 홈 화면 아이콘을 지우고 다시 추가해야 바뀝니다.');
 
     var rs = h('div', 'opt-reset');
     rs.appendChild(btn('obtn', '화면 설정 처음대로', function () {

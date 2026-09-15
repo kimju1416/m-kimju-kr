@@ -60,6 +60,7 @@
   var NAVS = [{ id: 'fixed', nm: '늘 보이기' }, { id: 'end', nm: '맨 아래에서만' }, { id: 'reveal', nm: '올리면 나타나기' }];
   // 상단바(시간·통신사 줄) 색
   // 🔴 이름만 맞바꿨다(09-15 형님 실제 폰: 누르는 쪽과 보이는 색이 반대) — id·저장값·색 넣는 코드는 그대로
+  // m11: 설정에서 뺐다(늘 제목과 같은 색 — apply 참고). 판이 섞인 몇 분 동안 옛 ui.js가 PR.BARS를 읽어도 안 깨지게 목록은 남긴다
   var BARS = [{ id: 'title', nm: '흰색' }, { id: 'white', nm: '제목과 같은 색' }];
   var CALSIZES = [{ id: 'm', nm: '보통' }, { id: 'l', nm: '크게' }, { id: 'xl', nm: '아주 크게' }];
   // 캘린더 탭 차례 — 일정 먼저(지금 그대로, 기본) / 할 일 먼저(09-15 형님 «지금 순서 마음에 드는데 옵션으로»)
@@ -168,9 +169,10 @@
     // 상단바 색: 안드로이드는 theme-color를 바로 따른다.
     // 아이폰은 홈 화면에 추가할 때의 status-bar-style이 굳으므로, 바꾼 뒤 아이콘을 다시 추가해야 한다.
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', p.barColor === 'white' ? '#FFFFFF' : find(THEMES, p.theme).hd);
+    // m11(09-16 형님 «스킨은 모두 제목과 같은 색 — 통일하고 상단바 색 설정은 삭제»): 늘 머리띠 색. 예전 저장값 barColor는 남아 있어도 안 쓴다
+    if (meta) meta.setAttribute('content', th.hd);
     var sb = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-    if (sb) sb.setAttribute('content', p.barColor === 'white' ? 'default' : 'black');
+    if (sb) sb.setAttribute('content', 'black');
     find(FONTS, p.font).css.forEach(addCss);
     // 스킨 글꼴은 «스킨 글꼴»(auto)일 때만 받는다 — 못 받으면 Pretendard로 보인다(app.css 글꼴 목록 뒤에 var(--f-brand))
     if (th.sk && p.font === 'auto') th.css.forEach(addCss);
