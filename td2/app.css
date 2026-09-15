@@ -990,6 +990,34 @@ td.al { white-space: normal; word-break: normal; }
    (hidden은 .app을 스크롤 상자로 만들어 머리띠가 안 붙으므로 대체로 쓰지 않는다 — 옛 브라우저는 body의 overflow-x: hidden이 대신) */
 @supports (overflow-x: clip) { .app { overflow-x: clip; } }
 
+/* ── 학생 시트 활동기록 «생기부 칩» (m7) — 이름은 모두 sgc-로 시작(다른 칸과 안 겹치게) ── */
+.sgc { padding: 0 calc(10px + var(--sar)) 14px calc(10px + var(--sal)); }
+.sgc-lb { margin: 0 0 6px; font-size: .71875rem; font-weight: 700; letter-spacing: .02em; color: var(--fg); }
+.sgc-areas { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--fg); border-left: 1px solid var(--fg); }
+.sgc-areas button {
+  min-width: 0; min-height: 44px; padding: 2px; border: 0;
+  border-right: 1px solid var(--fg); border-bottom: 1px solid var(--fg);
+  background: var(--field); color: var(--fg); font-size: .8125rem; font-weight: 600; line-height: 1.2; cursor: pointer;
+}
+.sgc-areas button[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); }
+.sgc-subjs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sgc-add { display: flex; gap: 6px; margin-top: 8px; }
+.sgc-add .inp { flex: 1 1 auto; min-width: 0; }
+.sgc-addb {
+  flex: none; min-width: 52px; min-height: 44px; padding: 0 10px;
+  border: 1px solid var(--fg); background: var(--field); color: var(--fg); font-size: .84375rem; font-weight: 700; cursor: pointer;
+}
+.sgc-cat { margin: 12px 0 5px; font-size: .71875rem; font-weight: 700; color: var(--fg2); }
+.sgc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sgc-chip, .sgc-subj {
+  min-width: 0; max-width: 100%; min-height: 44px; padding: 0 11px;
+  border: 1px solid var(--line2); background: var(--field); color: var(--fg);
+  font-size: .8125rem; line-height: 1.25; text-align: left; cursor: pointer;
+}
+.sgc-subj { font-weight: 700; border-color: var(--fg); }
+.sgc-chip[aria-pressed="true"], .sgc-subj[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+.sgc-note { margin: 8px 0 0; font-size: .75rem; line-height: 1.5; color: var(--fg2); }
+
 /* 아래 탭 위치 — 맨 아래에서만(글 끝에 붙음) */
 html[data-nav="end"] .app { display: flex; flex-direction: column; }
 html[data-nav="end"] .main { flex: 1 0 auto; padding-bottom: 24px; }

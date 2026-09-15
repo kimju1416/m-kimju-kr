@@ -24,7 +24,7 @@
   var UI_VER = 'm6 · 2026-09-15';
   var PR = window.TD2PREFS || null;
   function prefs() {
-    return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true };
+    return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
   }
   function setPref(patch) { if (PR) PR.set(patch); }
 
@@ -1889,6 +1889,225 @@
     $('sh-close').focus();
   }
 
+  // ── 활동기록 «생기부 칩» (m7) ─────────────────
+  /* 09-15 형님: [활동기록 추가] 아래에 PC 생기부 도우미의 칩 — 누르면 위 «활동 내용»에 글자가 붙고, 한 번 더 누르면 빠진다.
+     칩 말은 chips.js(PC sgb.js 그대로). 저장은 원래 [활동기록 추가] 길(snote.act) 그대로라 PC·동기화는 바뀌는 게 없다.
+     행발은 칩만 붙이고(«책임감, 배려심»), 나머지는 줄 앞에 이름(«수학: 풀이 과정» · «동아리: 활동 기획») — PC로 불러와도 어느 기록인지 보이게.
+     과세특 과목은 이 폰에 등록한다(PC 과목 목록은 폰에 안 온다) · 과목을 고르기 전엔 칩을 안 보인다 · 자유학기·일상생활은 설정에서 켠 폰만 */
+  var CHIPS = window.TD2M_CHIPS || null;
+  function chipAreas() {
+    var p = prefs();
+    var list = [{ id: 'behav', nm: '행발', pre: null }, { id: 'subject', nm: '과세특' }, { id: 'autonomy', nm: '자율', pre: '자율' },
+      { id: 'club', nm: '동아리', pre: '동아리' }, { id: 'career', nm: '진로', pre: '진로' }];
+    if (p.chipFree === true) list.push({ id: 'freesem', nm: '자유학기', pre: '자유학기' });
+    if (p.chipDaily === true) list.push({ id: 'daily', nm: '일상생활', pre: '일상생활' });
+    return list;
+  }
+  function subjList() { var s = prefs().subjs; return Array.isArray(s) ? s.slice() : []; }
+  function normSubj(v) { return String(v || '').replace(/[:：,\r\n]/g, ' ').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 20); }
+  // PC sgbChipGroups와 같은 규칙: 과목 이름으로 계열 칩을 찾아 맨 앞에, 공통 세특 칩에서 겹치는 것은 뺀다
+  function subjChipGroups(subj) {
+    var base = CHIPS.CHIPS.subject || [];
+    var hit = null;
+    for (var i = 0; i < CHIPS.SUBJ.length; i++) {
+      if (CHIPS.SUBJ[i][0].test(subj)) { hit = CHIPS.SUBJ[i][1]; break; }
+    }
+    if (!hit || !hit.length) return base;
+    var dedup = [];
+    base.forEach(function (g) {
+      var rest = g[1].filter(function (k) { return hit.indexOf(k) < 0; });
+      if (rest.length) dedup.push([g[0], rest]);
+    });
+    return [[subj + ' 활동', hit]].concat(dedup);
+  }
+  // 글자 다루기 — 칩은 «쉼표로 나뉜 한 덩어리»로만 찾고 뺀다(«성실함»이 «성실한 학습» 안에서 걸리지 않게)
+  function chipRe(tok) { return new RegExp('(^|,\\s*)' + tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*(?=,|$)'); }
+  function chipDrop(body, tok) {
+    var m = chipRe(tok).exec(body);
+    if (!m) return body;
+    var end = m.index + m[0].length;
+    if (m[1]) return body.slice(0, m.index) + body.slice(end);
+    return body.slice(0, m.index) + body.slice(end).replace(/^\s*,\s*/, '');
+  }
+  function chipPres() {
+    var out = subjList();
+    ['자율', '동아리', '진로', '자유학기', '일상생활'].forEach(function (p) { if (out.indexOf(p) < 0) out.push(p); });
+    return out;
+  }
+  function chipLinePre(line, pres) {
+    for (var i = 0; i < pres.length; i++) {
+      if (line.slice(0, pres[i].length + 1) === pres[i] + ':') return pres[i];
+    }
+    return null;
+  }
+  function chipBody(line, pre) { return line.slice(pre.length + 1).replace(/^\s+/, ''); }
+  function chipHas(text, pre, tok) {
+    var pres = chipPres();
+    return text.split('\n').some(function (line) {
+      var lp = chipLinePre(line, pres);
+      if (pre === null) return lp === null && chipRe(tok).test(line);
+      return lp === pre && chipRe(tok).test(chipBody(line, pre));
+    });
+  }
+  function chipJoin(body, tok) {
+    body = body.replace(/\s+$/, '');
+    if (!body) return tok;
+    return body + (/,$/.test(body) ? ' ' : ', ') + tok;
+  }
+  function chipAdd(text, pre, tok) {
+    var pres = chipPres();
+    var lines = text ? text.split('\n') : [];
+    var i;
+    if (pre === null) {
+      for (i = lines.length - 1; i >= 0; i--) if (chipLinePre(lines[i], pres) === null) break;
+      if (i < 0) lines.push(tok);
+      else lines[i] = chipJoin(lines[i], tok);
+      return lines.join('\n');
+    }
+    for (i = 0; i < lines.length; i++) if (chipLinePre(lines[i], pres) === pre) break;
+    if (i < lines.length) lines[i] = pre + ': ' + chipJoin(chipBody(lines[i], pre), tok);
+    else if (lines.length && !lines[lines.length - 1].replace(/\s+/g, '')) lines[lines.length - 1] = pre + ': ' + tok;
+    else lines.push(pre + ': ' + tok);
+    return lines.join('\n');
+  }
+  function chipRemove(text, pre, tok) {
+    var pres = chipPres();
+    var out = [];
+    text.split('\n').forEach(function (line) {
+      var lp = chipLinePre(line, pres);
+      if (pre === null) {
+        if (lp !== null || !chipRe(tok).test(line)) { out.push(line); return; }
+        var nl = line;
+        while (chipRe(tok).test(nl)) nl = chipDrop(nl, tok);
+        if (nl.replace(/[\s,]+/g, '')) out.push(nl);          // 칩만 있던 줄은 줄째 뺀다
+        return;
+      }
+      if (lp !== pre) { out.push(line); return; }
+      var body = chipBody(line, pre);
+      if (!chipRe(tok).test(body)) { out.push(line); return; }
+      while (chipRe(tok).test(body)) body = chipDrop(body, tok);
+      if (body.replace(/[\s,]+/g, '')) out.push(pre + ': ' + body);   // «수학:»만 남으면 줄째 뺀다
+    });
+    return out.join('\n');
+  }
+  function toggleChip(pre, tok) {
+    var ta = $('sh-tt');
+    var v = ta.value.replace(/\r\n?/g, '\n');
+    var nv = chipHas(v, pre, tok) ? chipRemove(v, pre, tok) : chipAdd(v, pre, tok);
+    if (nv.length > 1000) { toast('활동 내용은 1000자까지 적을 수 있습니다'); return; }
+    ta.value = nv;
+    formErr('sh-terr', '');
+    chipPaint();
+  }
+  function chipPaint() {
+    var box = $('sh-chips');
+    if (!box || box.hidden) return;
+    var text = $('sh-tt').value.replace(/\r\n?/g, '\n');
+    qsa('.sgc-chip', box).forEach(function (b) {
+      b.setAttribute('aria-pressed', chipHas(text, ui.chipPre, b.getAttribute('data-chip')) ? 'true' : 'false');
+    });
+  }
+  function renderChips() {
+    var box = $('sh-chips');
+    if (!box) return;
+    var show = !!CHIPS && ui.noteMode === 'act' && !!ui.sheet && ui.sheet.mode === 'one';
+    box.hidden = !show;
+    clear(box);
+    if (!show) return;
+    var areas = chipAreas();
+    var A = null;
+    areas.forEach(function (a) { if (a.id === ui.chipArea) A = a; });
+    if (!A) ui.chipArea = '';
+    box.appendChild(h('p', 'sgc-lb', '생기부 칩 — 누르면 위 활동 내용에 붙습니다'));
+    var g = h('div', 'sgc-areas');
+    g.setAttribute('role', 'group');
+    g.setAttribute('aria-label', '생기부 영역');
+    areas.forEach(function (a) {
+      var b = btn('', a.nm, function () { ui.chipArea = ui.chipArea === a.id ? '' : a.id; renderChips(); });
+      b.setAttribute('aria-pressed', ui.chipArea === a.id ? 'true' : 'false');
+      b.setAttribute('data-area', a.id);
+      g.appendChild(b);
+    });
+    // 5개는 한 줄 · 6개는 3칸 두 줄 · 7개는 4+3을 빈칸 없이(12칸 격자에 3칸·4칸씩)
+    var n = areas.length;
+    if (n === 7) {
+      g.style.gridTemplateColumns = 'repeat(12, minmax(0, 1fr))';
+      Array.prototype.forEach.call(g.children, function (b, i) { b.style.gridColumn = i < 4 ? 'span 3' : 'span 4'; });
+    } else g.style.gridTemplateColumns = 'repeat(' + (n === 6 ? 3 : n) + ', minmax(0, 1fr))';
+    box.appendChild(g);
+    if (!A) return;
+
+    var groups, pre;
+    if (A.id === 'subject') {
+      var subjs = subjList();
+      var cur = prefs().subj || '';
+      if (subjs.indexOf(cur) < 0) cur = '';
+      if (subjs.length) {
+        var sg = h('div', 'sgc-subjs');
+        sg.setAttribute('role', 'group');
+        sg.setAttribute('aria-label', '과목');
+        subjs.forEach(function (s) {
+          var b = btn('sgc-subj', s, function () { setPref({ subj: s }); renderChips(); });
+          b.setAttribute('aria-pressed', s === cur ? 'true' : 'false');
+          sg.appendChild(b);
+        });
+        box.appendChild(sg);
+      }
+      var add = h('div', 'sgc-add');
+      var inp = h('input', 'inp');
+      inp.id = 'sgc-newsubj';
+      inp.type = 'text';
+      inp.maxLength = 20;
+      inp.autocomplete = 'off';
+      inp.placeholder = '과목 추가 (예: 수학)';
+      inp.setAttribute('aria-label', '과목 추가');
+      var doAdd = function () {
+        var v = normSubj(inp.value);
+        if (!v) { inp.focus(); return; }
+        var list = subjList();
+        if (list.indexOf(v) < 0) {
+          if (list.length >= 20) { toast('과목은 20개까지 넣을 수 있습니다'); return; }
+          list.push(v);
+        }
+        setPref({ subjs: list, subj: v });
+        renderChips();
+      };
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); doAdd(); }
+      });
+      add.appendChild(inp);
+      add.appendChild(btn('sgc-addb', '추가', doAdd));
+      if (cur) {
+        add.appendChild(btn('sgc-addb', '빼기', function () {
+          if (!window.confirm('«' + cur + '» 과목을 목록에서 뺄까요? 이미 적은 활동기록은 그대로입니다.')) return;
+          setPref({ subjs: subjList().filter(function (x) { return x !== cur; }), subj: '' });
+          renderChips();
+        }));
+      }
+      box.appendChild(add);
+      if (!subjs.length) { box.appendChild(h('p', 'sgc-note', '과목을 먼저 추가하세요. 한 번 넣으면 이 폰에 남습니다.')); return; }
+      if (!cur) { box.appendChild(h('p', 'sgc-note', '과목을 고르면 그 과목 칩이 나옵니다.')); return; }
+      groups = subjChipGroups(cur);
+      pre = cur;
+    } else {
+      groups = CHIPS.CHIPS[A.id] || [];
+      pre = A.pre || null;
+    }
+    ui.chipPre = pre;
+    var text = $('sh-tt').value.replace(/\r\n?/g, '\n');
+    groups.forEach(function (gr) {
+      box.appendChild(h('p', 'sgc-cat', gr[0]));
+      var wrap = h('div', 'sgc-chips');
+      gr[1].forEach(function (k) {
+        var b = btn('sgc-chip', k, function () { toggleChip(pre, k); });
+        b.setAttribute('data-chip', k);
+        b.setAttribute('aria-pressed', chipHas(text, pre, k) ? 'true' : 'false');
+        wrap.appendChild(b);
+      });
+      box.appendChild(wrap);
+    });
+  }
+
   // 상담 | 활동기록 갈래
   function setNoteMode(mode, quiet) {
     ui.noteMode = mode === 'act' ? 'act' : 'talk';
@@ -1905,6 +2124,7 @@
     $('sh-tt').placeholder = act ? '예: 학급 회의 사회를 맡아 의견을 정리함' : '상담 내용';
     $('sh-tadd').textContent = act ? '활동기록 추가' : '상담 기록 추가';
     formErr('sh-terr', '');
+    renderChips();
     if (!quiet && ui.sheet && ui.sheet.mode === 'one') renderSheetLive();
   }
 
@@ -2085,6 +2305,7 @@
     M.op(act ? 'snote.act' : 'snote.add', { cls: sh.cls, name: sh.name, d: d, t: t });
     $('sh-tt').value = '';
     $('sh-tt').blur();
+    chipPaint();
     formErr('sh-terr', '');
     toast((act ? '활동기록' : '상담기록') + '을 적었습니다 · PC 반영 대기');
   }
@@ -2538,6 +2759,12 @@
     // ④ 학생 탭 — 폰에서 바꿀 것은 없다. 학생 탭이 비어 있을 때 어디서 켜는지 헤매지 않게 한 줄
     box.appendChild(sec('학생 탭'));
     foot('학생 자료는 PC 앱 설정 → [데이터] → 폰 연동 → [학생 자료도]를 켜면 명렬·출결·상담이 보입니다.');
+    // 활동기록 생기부 칩 — 자유학기·일상생활은 쓰는 선생님이 적어 기본 «안 보기»(09-15 형님)
+    lb('생기부 칩 · 자유학기');
+    box.appendChild(onOff('생기부 칩 자유학기', p.chipFree === true, 'chipFree'));
+    lb('생기부 칩 · 일상생활');
+    box.appendChild(onOff('생기부 칩 일상생활', p.chipDaily === true, 'chipDaily'));
+    foot('활동기록 칸 아래 생기부 칩 단추입니다. 자유학기(중학교)·일상생활(특수교육 기본 교육과정)을 쓰는 선생님만 켜세요.');
 
     // ⑤ 탭·화면 동작
     box.appendChild(sec('탭·화면 동작'));
@@ -3128,6 +3355,7 @@
   $('sh-save').addEventListener('click', saveAttend);
   $('sh-clear').addEventListener('click', clearAttend);
   $('sh-tadd').addEventListener('click', addTalk);
+  $('sh-tt').addEventListener('input', chipPaint);   // 손으로 고치면 칩 켜짐 표시도 따라간다
   $('sh-why').addEventListener('input', function () { if (ui.sheet) ui.sheet.why = this.value; });
   qsa('#sh-note-seg [data-note]').forEach(function (b) {
     b.addEventListener('click', function () { setNoteMode(b.getAttribute('data-note')); });

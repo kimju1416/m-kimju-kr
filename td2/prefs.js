@@ -53,16 +53,34 @@
     theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal',
     navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false,
     calOrder: 'ev', showMeal: true, showOt: true,     // 오늘 탭 급식·초과근무 칸(끄면 칸째 숨김)
-    visits: 0, installNo: false
+    visits: 0, installNo: false,
+    // 학생 탭 활동기록 생기부 칩(m7): 자유학기·일상생활 단추(많이 안 써서 기본 끔) · 과세특 «내 과목»(이 폰에만)과 고른 과목
+    chipFree: false, chipDaily: false, subjs: [], subj: ''
   };
 
   function find(list, id) {
     for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
     return null;
   }
+  // 과목 이름 — 20자·20개까지. «:»·«,»는 활동 내용 줄 앞 «수학: …»을 헷갈리게 해 빈칸으로 바꾼다
+  function normSubjs(a) {
+    var out = [];
+    if (!Array.isArray(a)) return out;
+    for (var i = 0; i < a.length && out.length < 20; i++) {
+      if (typeof a[i] !== 'string') continue;
+      var s = a[i].replace(/[:：,\r\n]/g, ' ').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 20);
+      if (s && out.indexOf(s) < 0) out.push(s);
+    }
+    return out;
+  }
   function norm(o) {
     o = o && typeof o === 'object' ? o : {};
+    var subjs = normSubjs(o.subjs);
     return {
+      chipFree: o.chipFree === true,
+      chipDaily: o.chipDaily === true,
+      subjs: subjs,
+      subj: (typeof o.subj === 'string' && subjs.indexOf(o.subj) >= 0) ? o.subj : '',
       theme: find(THEMES, o.theme) ? o.theme : DEF.theme,
       accent: find(ACCENTS, o.accent) ? o.accent : DEF.accent,
       font: find(FONTS, o.font) ? o.font : DEF.font,
@@ -86,7 +104,8 @@
       theme: p.theme, accent: p.accent, font: p.font, size: p.size, start: p.start, tab: p.tab,
       navMode: p.navMode, barColor: p.barColor, calSize: p.calSize, calWeekend: p.calWeekend, calWeekNo: p.calWeekNo,
       calOrder: p.calOrder, showMeal: p.showMeal, showOt: p.showOt,
-      visits: p.visits, installNo: p.installNo
+      visits: p.visits, installNo: p.installNo,
+      chipFree: p.chipFree, chipDaily: p.chipDaily, subjs: p.subjs.slice(), subj: p.subj
     };
   }
   function read() {
@@ -175,7 +194,8 @@
       return write(cur);
     },
     reset: function () {
-      cur = norm({ tab: cur.tab, visits: cur.visits, installNo: cur.installNo });
+      // 등록한 과목은 화면 설정이 아니라 선생님이 넣은 목록이라 [처음대로]에도 남긴다
+      cur = norm({ tab: cur.tab, visits: cur.visits, installNo: cur.installNo, subjs: cur.subjs, subj: cur.subj });
       apply(cur);
       return write(cur);
     },
