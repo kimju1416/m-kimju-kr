@@ -6,7 +6,7 @@
      열쇠(1시간)가 끝나면 기억해 둔 계정으로 prompt=none + login_hint 이동 — 화면 없이 0.3~3초에 돌아온다(안드로이드·아이폰 실측).
    · 드라이브: 앱 전용 숨김 칸(appDataFolder). PC가 올린 td2-mobile.json을 읽고, 입력은 한 건마다 m-op-<ms>-<id>.json 새 파일로 올린다.
    🔴 td2-sync.json(PC끼리 쓰는 문서 — 키·생기부가 들어 있다)은 읽지 않는다.
-   🔴 학생 자료(attend·talk)는 폰에 저장하지 않는다 — 메모리에만. 저장하는 것: 계정 이메일·1시간 열쇠·못 올린 입력·학생 자료를 뺀 보기 사본.
+   🔴 학생 자료(attend·talk)는 폰에 저장하지 않는다 — 메모리에만. 저장하는 것: 계정 이메일·1시간 열쇠(+확인한 계정)·못 올린 입력(+적을 때 계정)·학생 자료를 뺀 보기 사본.
    형식: TeacherDesk2 저장소 docs/mobile-sync/SCHEMA.md */
 (function () {
   'use strict';
@@ -33,7 +33,8 @@
   var listeners = [];
   var state = {
     phase: 'boot', email: '', view: null, viewAt: 0, pending: [], busy: false,
-    err: '', errCode: '', inapp: isInapp(), standalone: isStandalone()
+    err: '', errCode: '', inapp: isInapp(), standalone: isStandalone(),
+    needLogin: false                   // 로그인 시간이 끝났는데 글을 쓰는 중이라 구글로 안 떠나고 기다리는 중
   };
   var started = false, pollTimer = null, flushing = false, loadingView = null;
 
@@ -61,6 +62,11 @@
 
   /* ── 열쇠 ── */
   function tok() { var t = lsGet('tok', null); return t && t.exp > Date.now() + 30000 ? t.access : ''; }
+  /* 🔴 이 열쇠가 **누구 계정** 것인가 — 로그인에서 돌아올 때 계정 고르기로 다른 계정(B)을 고를 수 있다.
+     예전에는 저장해 둔 이메일(A)을 믿고, B 열쇠로 A에서 적은 상담·출결을 B 드라이브에 올렸다(09-15 검수 두 갈래 재현).
+     → 열쇠마다 구글에 물어 확인한 이메일을 붙여 두고(tok.email), 입력에도 적을 때의 계정(acct)을 붙여 **같은 계정일 때만** 올린다. */
+  function tokEmail() { var t = lsGet('tok', null); return t && t.exp > Date.now() + 30000 ? String(t.email || '') : ''; }
+  function sameAcct(a, b) { return !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase(); }
   function goGoogle(prompt, hint) {
     var st = rid();
     lsSet('rd', { state: st, prompt: prompt || '', at: Date.now() });
@@ -74,6 +80,14 @@
     var email = lsGet('email', '');
     var last = lsGet('silentAt', 0);
     if (!email || Date.now() - last < 60000) return false;
+    /* 🔴 글을 쓰는 중이면 구글로 떠나지 않는다 — 떠나면 페이지가 바뀌어 쓰던 상담·메모가 날아간다(09-15 검수).
+       화면(ui.js)이 canLeave로 알려 주고, 다 쓰면 새로 받기를 다시 불러 이어 간다. 떠난 것으로 치고 true를 돌려준다
+       (부르는 쪽이 로그인 화면으로 바꾸지 않게 — 적던 화면이 그대로 남아야 한다) */
+    var pub = window.TD2M;
+    if (pub && typeof pub.canLeave === 'function' && !pub.canLeave()) {
+      if (!state.needLogin) set({ needLogin: true });
+      return true;
+    }
     lsSet('silentAt', Date.now());
     goGoogle('none', email);
     return true;
@@ -90,6 +104,7 @@
     if (h.get('error')) return { err: h.get('error'), prompt: rd.prompt };
     var granted = String(h.get('scope') || '').split(/\s+/);
     if (h.get('scope') && granted.indexOf(SCOPE_DRIVE) < 0) return { err: 'no-drive' };
+    // 새 열쇠에는 아직 계정이 없다(email 칸 없음) — ensureEmail이 구글에 물어 붙인다
     lsSet('tok', { access: h.get('access_token'), exp: Date.now() + Math.max(60, +h.get('expires_in') || 3600) * 1000 });
     lsSet('silentAt', 0);
     return { ok: true, prompt: rd.prompt };
@@ -121,8 +136,41 @@
       return r.status === 204 ? null : r.json().catch(function () { throw gErr('net', '구글 드라이브가 아닌 응답이 왔습니다 — 와이파이가 막고 있을 수 있어요'); });
     });
   }
-  function fetchEmail() {
-    return api('GET', EP.oidc + '/v1/userinfo').then(function (j) { var e = String((j && j.email) || ''); if (e) lsSet('email', e); return e; }, function () { return ''; });
+  /* 이 열쇠의 계정을 확인한다 — 열쇠마다 한 번. 확인 못 하면 올리지 않는다(추측으로 올리면 남의 드라이브로 간다) */
+  function ensureEmail() {
+    var known = tokEmail();
+    if (known) return Promise.resolve(known);
+    return api('GET', EP.oidc + '/v1/userinfo').then(function (j) {
+      var e = String((j && j.email) || '');
+      if (!e) throw gErr('net', '구글 계정을 확인하지 못했습니다 — 잠시 뒤 다시 시도합니다');
+      var t = lsGet('tok', null);
+      if (t) { t.email = e; lsSet('tok', t); }
+      var prev = lsGet('email', '');
+      if (prev && !sameAcct(prev, e)) acctChanged(prev);
+      lsSet('email', e);
+      state.email = e;
+      return e;
+    }, function (err) {
+      if (err && err.code === 'auth') throw err;
+      throw gErr('net', '구글 계정을 확인하지 못했습니다 — 잠시 뒤 다시 시도합니다');
+    });
+  }
+  /* 다른 계정으로 바뀌었다 — 앞 계정의 보기 사본은 버리고(남의 학교·할 일이 새 계정 화면에 뜨지 않게),
+     앞 계정에서 적은 입력은 그 계정 몫으로 묶어 둔다(올리지도 지우지도 않는다 — 그 계정으로 다시 로그인하면 올라간다) */
+  function acctChanged(prev) {
+    lsSet('view', null);
+    state.view = null;
+    state.viewAt = 0;
+    state.pending = state.pending.map(function (o) { return o.acct ? o : merge(o, { acct: prev }); });
+    savePending();
+  }
+  // 지금 계정으로 올릴 수 있는 입력 — 계정 표시가 없는 것(이 브라우저에서 계정을 한 번도 몰랐을 때 적은 것)은 지금 계정 것으로 본다
+  function mine(o) { return !o.acct || sameAcct(o.acct, tokEmail()); }
+  // 다른 계정 몫으로 묶여 있는 입력 — 화면이 «그 계정으로 로그인해야 올라갑니다»를 띄운다
+  function held() {
+    var me = tokEmail() || state.email;
+    var hs = state.pending.filter(function (o) { return o.status === 'queued' && o.acct && !sameAcct(o.acct, me); });
+    return { n: hs.length, acct: hs.length ? hs[0].acct : '' };
   }
 
   /* ── 보기 파일 ── */
@@ -182,9 +230,11 @@
     return api('POST', EP.api + '/upload/drive/v3/files?uploadType=multipart&fields=id', new Blob([multi]), { 'Content-Type': 'multipart/related; boundary=' + B })
       .then(function (r) { if (!r || !r.id) throw gErr('net', '구글 드라이브가 아닌 응답이 왔습니다'); });
   }
+  // 이번에 올릴 것 — 아직 안 올렸고, 지금 계정 것만(다른 계정 몫은 그대로 둔다)
+  function uploadable() { return state.pending.filter(function (o) { return o.status === 'queued' && mine(o); }); }
   function flush() {
     if (flushing) return Promise.resolve();
-    var todo = state.pending.filter(function (o) { return o.status === 'queued'; });
+    var todo = uploadable();
     if (!todo.length || !tok()) return Promise.resolve();
     flushing = true;
     var chain = Promise.resolve();
@@ -197,10 +247,11 @@
       });
     });
     /* 🔴 올리는 동안 새로 적은 것은 이번 차례에 안 들어 있다 — 끝나자마자 한 번 더 돌린다.
-       안 그러면 여러 개를 연달아 적을 때 뒤엣것들이 새로 받기(20초)까지 «올리기 대기»에 머문다(끝까지 검사에서 잡음) */
+       안 그러면 여러 개를 연달아 적을 때 뒤엣것들이 새로 받기(20초)까지 «올리기 대기»에 머문다(끝까지 검사에서 잡음)
+       ⚠️ 다른 계정 몫(queued)을 «남은 것»으로 세면 끝없이 돈다 — 올릴 수 있는 것만 센다 */
     return chain.then(function () {
       flushing = false;
-      if (tok() && state.pending.some(function (o) { return o.status === 'queued'; })) return flush();
+      if (tok() && uploadable().length) return flush();
       schedule();
     }, function (e) {
       flushing = false;
@@ -213,7 +264,8 @@
   function schedule() {
     clearTimeout(pollTimer);
     if (state.phase !== 'ready') return;
-    var waiting = state.pending.some(function (o) { return o.status === 'sent' || o.status === 'queued'; });
+    // 다른 계정 몫으로 묶인 입력은 기다려도 안 올라가니 «기다리는 중»(20초 간격)으로 세지 않는다
+    var waiting = state.pending.some(function (o) { return o.status === 'sent' || (o.status === 'queued' && mine(o)); });
     pollTimer = setTimeout(function () { if (document.visibilityState !== 'hidden') refresh(); else schedule(); }, waiting ? POLL_WAIT : POLL_IDLE);
   }
 
@@ -231,8 +283,16 @@
   function start() {
     if (started) return;
     started = true;
-    state.pending = (lsGet('pending', []) || []).filter(function (o) { return o && o.id && o.type; });
-    state.email = lsGet('email', '');
+    var prevEmail = lsGet('email', '');
+    // 계정 표시가 없는 옛 입력(m4까지 적은 것)은 그때 로그인해 있던 계정 것이다 — 계정이 바뀌어도 섞이지 않게 먼저 붙인다
+    var stamped = false;
+    state.pending = (lsGet('pending', []) || []).filter(function (o) { return o && o.id && o.type; }).map(function (o) {
+      if (o.acct || !prevEmail) return o;
+      stamped = true;
+      return merge(o, { acct: prevEmail });
+    });
+    if (stamped) savePending();
+    state.email = prevEmail;
     var back = catchReturn();
     if (back && back.err) {
       if (back.err === 'no-drive') { set({ phase: 'error', errCode: 'no-drive', err: '구글 드라이브 허락이 없습니다' }); return; }
@@ -247,10 +307,11 @@
       set({ phase: 'login', view: null });
       return;
     }
-    if (cached && cached.kind === 'mobile-view') set({ phase: 'ready', view: cached, viewAt: 0, busy: true });
+    /* 🔴 저장해 둔 화면은 **계정을 확인한 열쇠이고 같은 계정일 때만** 먼저 띄운다.
+       방금 로그인에서 돌아온 열쇠는 아직 누구 것인지 모른다 — 다른 계정이면 앞 계정의 학교·할 일이 잠깐 보였다 */
+    if (cached && cached.kind === 'mobile-view' && sameAcct(tokEmail(), prevEmail)) set({ phase: 'ready', view: cached, viewAt: 0, busy: true });
     else set({ busy: true });
-    (state.email ? Promise.resolve(state.email) : fetchEmail()).then(function (email) {
-      state.email = email;
+    ensureEmail().then(function () {
       return loadView();
     }).then(function () { set({ busy: false }); return flush(); }).then(schedule, failTo);
     document.addEventListener('visibilitychange', function () {
@@ -265,13 +326,14 @@
   function logout() {
     ['tok', 'email', 'view', 'pending', 'silentAt', 'rd'].forEach(function (k) { lsSet(k, null); });
     clearTimeout(pollTimer);
-    set({ phase: 'login', email: '', view: null, viewAt: 0, pending: [], busy: false, err: '', errCode: '' });
+    set({ phase: 'login', email: '', view: null, viewAt: 0, pending: [], busy: false, err: '', errCode: '', needLogin: false });
   }
   function refresh() {
     if (state.busy) return;
     if (!tok()) { if (!silent()) set({ phase: 'login' }); return; }
     set({ busy: true });
-    flush().then(loadView).then(function () { set({ busy: false }); schedule(); }, failTo);
+    // 계정 확인 → 올리기 → 받기. 계정을 모르면 올리지 않는다(ensureEmail이 실패로 끝낸다)
+    ensureEmail().then(function () { return flush(); }).then(loadView).then(function () { set({ busy: false }); schedule(); }, failTo);
   }
   var TYPES = {
     'todo.add': 1, 'todo.done': 1, 'todo.edit': 1, 'todo.del': 1, 'memo.add': 1, 'memo.edit': 1, 'memo.del': 1,
@@ -280,7 +342,8 @@
   };
   function op(type, p) {
     if (!TYPES[type]) throw new Error('모르는 입력 종류: ' + type);
-    var o = { id: rid(), type: type, p: clone(p || {}), at: new Date().toISOString(), status: 'queued' };
+    // acct — 적을 때 로그인해 있던 계정. 계정이 바뀐 뒤에는 이 입력을 새 계정 드라이브로 올리지 않는다
+    var o = { id: rid(), type: type, p: clone(p || {}), at: new Date().toISOString(), status: 'queued', acct: tokEmail() || lsGet('email', '') };
     state.pending = state.pending.concat([o]);
     savePending(); emit();
     flush();
@@ -295,5 +358,6 @@
     try { navigator.clipboard.writeText(url); } catch (e) { /* 못 복사해도 그만 */ }
   }
 
-  window.TD2M = { state: state, on: on, start: start, login: login, logout: logout, refresh: refresh, op: op, openExternal: openExternal };
+  // canLeave — 화면(ui.js)이 채운다: 글을 쓰는 중이면 false(silent가 구글로 떠나지 않는다)
+  window.TD2M = { state: state, on: on, start: start, login: login, logout: logout, refresh: refresh, op: op, openExternal: openExternal, held: held, canLeave: null };
 })();

@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm4 · 2026-09-15';
+  var UI_VER = 'm5 · 2026-09-15';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, visits: 0, installNo: true };
@@ -648,9 +648,17 @@
 
   function renderBands(s, ready) {
     $('band-inapp').hidden = !s.inapp;
-    var errOn = ready && !!s.err;
+    // 로그인 시간이 끝났는데 글을 쓰는 중이라 구글로 떠나지 않고 기다리는 중(core.js silent → needLogin)
+    var errOn = ready && (!!s.err || !!s.needLogin);
     $('band-err').hidden = !errOn;
-    if (errOn) $('band-err-tx').textContent = s.err;
+    if (errOn) $('band-err-tx').textContent = s.needLogin ? '로그인 시간이 끝났습니다 — 쓰던 글을 저장하거나 지운 뒤 [다시 시도]를 누르면 이어집니다' : s.err;
+    // 다른 계정에서 적은 입력이 묶여 있다(core.js held) — 새 index.html에만 있는 띠라 없으면 건너뛴다
+    var hb = $('band-held');
+    if (hb) {
+      var hd = M.held ? M.held() : { n: 0 };
+      hb.hidden = !(ready && hd.n > 0);
+      if (!hb.hidden) $('band-held-tx').textContent = hd.acct + ' 계정에서 적은 입력 ' + hd.n + '건은 그 계정으로 다시 로그인해야 PC에 올라갑니다';
+    }
     $('btn-band-retry').disabled = !!s.busy;
     var stale = false;
     if (ready) {
@@ -2972,7 +2980,23 @@
     else if (errFn === 'external') M.openExternal();
     else M.refresh();
   });
-  $('btn-logout-err').addEventListener('click', function () { M.logout(); });
+  /* 🔴 설정의 로그아웃(onLogout)과 같이 — 안 올린 입력이 있으면 한 번 더 눌러야 로그아웃한다.
+     오류 화면 쪽만 곧바로 M.logout()을 불러, 오프라인에서 적은 출결·상담이 경고 없이 지워졌다(09-15 검수). */
+  $('btn-logout-err').addEventListener('click', function () {
+    var b = this;
+    var act = pend().filter(isActive).length;
+    if (act && !(ui.errLogoutArm && Date.now() < ui.errLogoutArm)) {
+      ui.errLogoutArm = Date.now() + 5000;
+      b.classList.add('arm');
+      b.textContent = '안 올린 입력 ' + act + '건이 사라집니다 · 한 번 더 누르면 로그아웃';
+      setTimeout(function () { ui.errLogoutArm = 0; b.classList.remove('arm'); b.textContent = '로그아웃'; }, 5000);
+      return;
+    }
+    ui.errLogoutArm = 0;
+    b.classList.remove('arm');
+    b.textContent = '로그아웃';
+    M.logout();
+  });
 
   TABS.forEach(function (t) {
     $('tab-' + t).addEventListener('click', function () { setTab(t); });
@@ -3042,6 +3066,18 @@
   if (PR && PR.onInstall) PR.onInstall(function () { if (ui.overlay === 'opt') renderOptInstall(); schedule(); });
   var resizeT = 0;
   window.addEventListener('resize', function () { clearTimeout(resizeT); resizeT = setTimeout(function () { schedule(); vpFix(); }, 150); });
+
+  /* 글을 쓰는 중인가 — 로그인 시간(1시간)이 끝나도 이때는 구글로 떠나지 않는다(core.js silent).
+     떠나면 페이지가 바뀌어 쓰던 상담·메모가 날아간다(09-15 검수). 입력칸에 초점이 있거나, 보이는 입력칸에 글이 남아 있으면 «쓰는 중» */
+  function typingNow() {
+    if (isField(document.activeElement)) return true;
+    return qsa('input[type="text"], input:not([type]), textarea').some(function (el) { return !!el.value && !!el.offsetParent; });
+  }
+  M.canLeave = function () { return !typingNow(); };
+  // 다 썼으면(초점이 빠지고 남은 글이 없으면) 기다리던 로그인을 이어 간다
+  document.addEventListener('focusout', function () {
+    setTimeout(function () { if (S().needLogin && !typingNow()) M.refresh(); }, 500);
+  });
 
   M.on(schedule);
   render();

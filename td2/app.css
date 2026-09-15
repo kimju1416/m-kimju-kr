@@ -271,6 +271,8 @@ body.kb .tabs, body.kb .pbar, body.kb .actbar, body.sel-mode .tabs { display: no
 .obtn:active { background: var(--press); }
 .obtn:disabled { opacity: .45; cursor: default; }
 .obtn.arm { background: var(--acc); border-color: var(--acc); color: var(--on-acc); font-weight: 700; }
+/* 오류 화면 [로그아웃] — 안 올린 입력이 있어 한 번 더 눌러야 할 때 */
+.tbtn.arm { color: var(--acc); font-weight: 700; }
 .sbtn {
   flex: none; min-width: 72px; min-height: 44px; padding: 0 14px;
   border: 0; background: var(--ink); color: var(--on-ink);

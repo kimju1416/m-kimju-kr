@@ -40,7 +40,8 @@
   // 아래 탭: 늘 보이기 / 글 끝에서만 / 내리면 숨고 올리면 나타남
   var NAVS = [{ id: 'fixed', nm: '늘 보이기' }, { id: 'end', nm: '맨 아래에서만' }, { id: 'reveal', nm: '올리면 나타나기' }];
   // 상단바(시간·통신사 줄) 색
-  var BARS = [{ id: 'title', nm: '제목과 같은 색' }, { id: 'white', nm: '흰색' }];
+  // 🔴 이름만 맞바꿨다(09-15 형님 실제 폰: 누르는 쪽과 보이는 색이 반대) — id·저장값·색 넣는 코드는 그대로
+  var BARS = [{ id: 'title', nm: '흰색' }, { id: 'white', nm: '제목과 같은 색' }];
   var CALSIZES = [{ id: 'm', nm: '보통' }, { id: 'l', nm: '크게' }, { id: 'xl', nm: '아주 크게' }];
   var TABS = ['cal', 'today', 'memo', 'stu'];
   // calWeekend: 달력에 토·일 칸 · calWeekNo: 달력 줄 왼쪽에 «1주·2주»
