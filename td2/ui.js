@@ -186,6 +186,7 @@
       homeroom: a.homeroom || (hrs[0] ? hrs[0].cls : ''),
       cur: a.cur || '',
       slots: arr(a.slots),
+      subjects: arr(a.subjects).filter(function (s) { return typeof s === 'string' && s; }),   // PC 생기부 과목(3.42)
       gubun: arr(a.gubun),
       jong: arr(a.jong),
       classes: hrs.concat(rest)
@@ -515,14 +516,14 @@
     var src = c ? (kind === 'act' ? c.act : c.talk) : null;
     var type = kind === 'act' ? 'snote.act' : 'snote.add';
     var base = arr(src && src[key]).map(function (x) {
-      return { d: x.d || '', t: String(x.t || ''), mid: x.mid, mark: '' };
+      return { d: x.d || '', t: String(x.t || ''), mid: x.mid, a: x.a || '', s: x.s || '', mark: '' };
     });
     var added = [];
     pend().forEach(function (o) {
       if (o.type !== type) return;
       var p = o.p || {};
       if (p.cls !== cls || p.name !== name) return;
-      if (isActive(o)) added.unshift({ d: p.d || '', t: String(p.t || ''), mark: 'wait' });
+      if (isActive(o)) added.unshift({ d: p.d || '', t: String(p.t || ''), a: p.a || '', s: p.s || '', mark: 'wait' });
       else if (o.status === 'applied') markApplied(base, o, function (r) { return r.t === p.t && r.d === p.d; });
     });
     var all = added.concat(base);
@@ -1903,7 +1904,14 @@
     if (p.chipDaily === true) list.push({ id: 'daily', nm: '일상생활', pre: '일상생활' });
     return list;
   }
-  function subjList() { var s = prefs().subjs; return Array.isArray(s) ? s.slice() : []; }
+  // 이 폰에서 넣은 과목(빼기는 이것만) · 보이는 과목은 PC 생기부 과목(3.42 보기 파일)과 합친 것
+  function localSubjs() { var s = prefs().subjs; return Array.isArray(s) ? s.slice() : []; }
+  function subjList() {
+    var out = [];
+    var m = attendModel();
+    arr(m && m.subjects).concat(localSubjs()).forEach(function (s) { s = normSubj(s); if (s && out.indexOf(s) < 0) out.push(s); });
+    return out.slice(0, 40);
+  }
   function normSubj(v) { return String(v || '').replace(/[:：,\r\n]/g, ' ').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 20); }
   // PC sgbChipGroups와 같은 규칙: 과목 이름으로 계열 칩을 찾아 맨 앞에, 공통 세특 칩에서 겹치는 것은 뺀다
   function subjChipGroups(subj) {
@@ -2007,6 +2015,28 @@
       b.setAttribute('aria-pressed', chipHas(text, ui.chipPre, b.getAttribute('data-chip')) ? 'true' : 'false');
     });
   }
+  /* ── m8: 활동기록 «구분» 저장 (PC 3.42 · 형님 09-16) ──
+     PC가 caps.actArea를 싣고 있으면 영역 단추가 «저장할 구분»이 된다 — 고르고 적어야 저장, 목록도 그 구분만.
+     글 앞에 «수학:»을 붙이지 않고 a·s로 보낸다. PC가 옛 판(3.41)이면 m7 그대로(글 앞에 이름) — 어느 쪽이 먼저 바뀌어도 기록이 안 사라진다 */
+  function areaMode() { var v = V(); return !!(v && v.caps && v.caps.actArea); }
+  var AREA_NM = { behav: '행발', subject: '과세특', autonomy: '자율', club: '동아리', career: '진로', freesem: '자유학기', daily: '일상생활' };
+  function areaLabelOf(a, s) { return a === 'subject' ? (s ? '과세특 · ' + s : '과세특') : (AREA_NM[a] || ''); }
+  // 지금 고른 저장 구분 {a, s, label} — 구분 저장이 아니거나 안 골랐으면 null
+  function actArea() {
+    if (!areaMode()) return null;
+    var A = null;
+    chipAreas().forEach(function (x) { if (x.id === ui.chipArea) A = x; });
+    if (!A) return null;
+    if (A.id !== 'subject') return { a: A.id, s: '', label: A.nm };
+    var cur = prefs().subj || '';
+    if (subjList().indexOf(cur) < 0) cur = '';
+    return { a: 'subject', s: cur, label: areaLabelOf('subject', cur) };
+  }
+  // 구분·과목을 바꾸면 칩과 아래 기록 목록을 함께 다시
+  function chipRefresh() {
+    renderChips();
+    if (ui.sheet && ui.sheet.mode === 'one' && ui.noteMode === 'act') renderSheetLive();
+  }
   function renderChips() {
     var box = $('sh-chips');
     if (!box) return;
@@ -2014,16 +2044,19 @@
     box.hidden = !show;
     clear(box);
     if (!show) return;
+    var am = areaMode();
     var areas = chipAreas();
     var A = null;
     areas.forEach(function (a) { if (a.id === ui.chipArea) A = a; });
     if (!A) ui.chipArea = '';
-    box.appendChild(h('p', 'sgc-lb', '생기부 칩 — 누르면 위 활동 내용에 붙습니다'));
+    var arL = actArea();
+    $('sh-tadd').textContent = arL ? '활동기록 추가 · ' + arL.label : '활동기록 추가';
+    box.appendChild(h('p', 'sgc-lb', am ? '구분 — 고른 구분으로 저장합니다 · 칩을 누르면 위 활동 내용에 붙습니다' : '생기부 칩 — 누르면 위 활동 내용에 붙습니다'));
     var g = h('div', 'sgc-areas');
     g.setAttribute('role', 'group');
     g.setAttribute('aria-label', '생기부 영역');
     areas.forEach(function (a) {
-      var b = btn('', a.nm, function () { ui.chipArea = ui.chipArea === a.id ? '' : a.id; renderChips(); });
+      var b = btn('', a.nm, function () { ui.chipArea = ui.chipArea === a.id ? '' : a.id; chipRefresh(); });
       b.setAttribute('aria-pressed', ui.chipArea === a.id ? 'true' : 'false');
       b.setAttribute('data-area', a.id);
       g.appendChild(b);
@@ -2047,7 +2080,7 @@
         sg.setAttribute('role', 'group');
         sg.setAttribute('aria-label', '과목');
         subjs.forEach(function (s) {
-          var b = btn('sgc-subj', s, function () { setPref({ subj: s }); renderChips(); });
+          var b = btn('sgc-subj', s, function () { setPref({ subj: s }); chipRefresh(); });
           b.setAttribute('aria-pressed', s === cur ? 'true' : 'false');
           sg.appendChild(b);
         });
@@ -2064,34 +2097,34 @@
       var doAdd = function () {
         var v = normSubj(inp.value);
         if (!v) { inp.focus(); return; }
-        var list = subjList();
-        if (list.indexOf(v) < 0) {
+        var list = localSubjs();
+        if (list.indexOf(v) < 0 && subjList().indexOf(v) < 0) {       // PC 과목에 이미 있으면 폰 목록에 또 넣지 않는다
           if (list.length >= 20) { toast('과목은 20개까지 넣을 수 있습니다'); return; }
           list.push(v);
         }
         setPref({ subjs: list, subj: v });
-        renderChips();
+        chipRefresh();
       };
       inp.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); doAdd(); }
       });
       add.appendChild(inp);
       add.appendChild(btn('sgc-addb', '추가', doAdd));
-      if (cur) {
+      if (cur && localSubjs().indexOf(cur) >= 0) {       // PC에서 온 과목은 PC 생기부 도우미에서 뺀다
         add.appendChild(btn('sgc-addb', '빼기', function () {
           if (!window.confirm('«' + cur + '» 과목을 목록에서 뺄까요? 이미 적은 활동기록은 그대로입니다.')) return;
-          setPref({ subjs: subjList().filter(function (x) { return x !== cur; }), subj: '' });
-          renderChips();
+          setPref({ subjs: localSubjs().filter(function (x) { return x !== cur; }), subj: '' });
+          chipRefresh();
         }));
       }
       box.appendChild(add);
       if (!subjs.length) { box.appendChild(h('p', 'sgc-note', '과목을 먼저 추가하세요. 한 번 넣으면 이 폰에 남습니다.')); return; }
       if (!cur) { box.appendChild(h('p', 'sgc-note', '과목을 고르면 그 과목 칩이 나옵니다.')); return; }
       groups = subjChipGroups(cur);
-      pre = cur;
+      pre = am ? null : cur;           // 구분 저장이면 글 앞에 과목 이름을 안 붙인다
     } else {
       groups = CHIPS.CHIPS[A.id] || [];
-      pre = A.pre || null;
+      pre = am ? null : (A.pre || null);
     }
     ui.chipPre = pre;
     var text = $('sh-tt').value.replace(/\r\n?/g, '\n');
@@ -2229,16 +2262,20 @@
 
   function renderTalk(c, st) {
     var act = ui.noteMode === 'act';
-    var list = noteList(ui.noteMode, c.cls, st.key, st.name);
-    $('sh-talk-n').textContent = list.length + '건';
+    var full = noteList(ui.noteMode, c.cls, st.key, st.name);
+    // 구분을 골랐으면 그 구분 기록만(형님 09-16 «볼 때도 따로») — 과세특에 과목을 안 골랐으면 과세특 전부
+    var ar = act ? actArea() : null;
+    var list = ar ? full.filter(function (x) { return x.a === ar.a && (ar.a !== 'subject' || !ar.s || x.s === ar.s); }) : full;
+    $('sh-talk-n').textContent = ar ? ar.label + ' ' + list.length + '건 · 전체 ' + full.length + '건' : list.length + '건';
     var box = $('sh-talk');
     clear(box);
-    if (!list.length) { box.appendChild(empty(act ? '활동기록이 없습니다' : '상담기록이 없습니다')); return; }
+    if (!list.length) { box.appendChild(empty(act ? (ar ? ar.label + ' 활동기록이 없습니다' : '활동기록이 없습니다') : '상담기록이 없습니다')); return; }
     var wrap = h('div');
     list.forEach(function (x) {
       var r = h('div', 'talk');
       var top = h('div', 'talk-d');
       top.appendChild(h('span', '', isYmd(x.d) ? x.d.slice(0, 4) + '-' + dayLabel(x.d) : (x.d || '')));
+      if (act && x.a && areaLabelOf(x.a, x.s)) top.appendChild(h('span', 'sgc-tag', areaLabelOf(x.a, x.s)));
       if (x.mark) top.appendChild(markEl(x.mark));
       r.appendChild(top);
       r.appendChild(h('p', 'tx', x.t));
@@ -2301,13 +2338,26 @@
     if (!isYmd(d)) { formErr('sh-terr', (act ? '활동' : '상담') + ' 날짜를 고르세요'); return; }
     if (!t) { formErr('sh-terr', (act ? '활동' : '상담') + ' 내용을 적어 주세요'); $('sh-tt').focus(); return; }
     if (t.length > 1000) { formErr('sh-terr', '1000자까지 적을 수 있습니다'); return; }
+    // PC 3.42면 구분을 고르고 적는다(형님 09-16 «행발 선택하고 저장하는 게 맞다»)
+    var ar = act ? actArea() : null;
+    if (act && areaMode()) {
+      if (!ar) {
+        formErr('sh-terr', '구분(행발·과세특·동아리…)을 먼저 고르세요 — 아래 단추입니다');
+        var g0 = document.querySelector('#sh-chips .sgc-areas button');
+        if (g0) g0.focus();
+        return;
+      }
+      if (ar.a === 'subject' && !ar.s) { formErr('sh-terr', '과세특은 과목을 고르세요 — 아래 과목 단추입니다'); return; }
+    }
     lock(b);
-    M.op(act ? 'snote.act' : 'snote.add', { cls: sh.cls, name: sh.name, d: d, t: t });
+    var payload = { cls: sh.cls, name: sh.name, d: d, t: t };
+    if (ar) { payload.a = ar.a; if (ar.s) payload.s = ar.s; }
+    M.op(act ? 'snote.act' : 'snote.add', payload);
     $('sh-tt').value = '';
     $('sh-tt').blur();
     chipPaint();
     formErr('sh-terr', '');
-    toast((act ? '활동기록' : '상담기록') + '을 적었습니다 · PC 반영 대기');
+    toast((act ? '활동기록' + (ar ? '(' + ar.label + ')' : '') : '상담기록') + '을 적었습니다 · PC 반영 대기');
   }
 
   // ── 입력 시트(할 일·메모 고치기, D-Day, 초과근무, 진도) ──
@@ -3049,7 +3099,7 @@
       case 'attend.setMany': return pre + arr(p.keys).length + '명 출결 · ' + md(p.date) + ' · ' + recText(p.rec);
       case 'attend.clearMany': return pre + arr(p.keys).length + '명 출석으로 · ' + md(p.date);
       case 'snote.add':
-      case 'snote.act': return pre + (p.name || '') + ' · ' + firstLine(p.t);
+      case 'snote.act': return pre + (p.name || '') + ' · ' + (p.a && areaLabelOf(p.a, p.s) ? areaLabelOf(p.a, p.s) + ' · ' : '') + firstLine(p.t);
     }
     return '';
   }

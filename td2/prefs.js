@@ -80,7 +80,8 @@
       chipFree: o.chipFree === true,
       chipDaily: o.chipDaily === true,
       subjs: subjs,
-      subj: (typeof o.subj === 'string' && subjs.indexOf(o.subj) >= 0) ? o.subj : '',
+      // 고른 과목은 폰 목록에 없어도 된다 — PC 생기부 과목(보기 파일)에서 고를 수 있다(m8). 보이는지는 ui.js가 합친 목록으로 가린다
+      subj: (typeof o.subj === 'string' && normSubjs([o.subj])[0]) || '',
       theme: find(THEMES, o.theme) ? o.theme : DEF.theme,
       accent: find(ACCENTS, o.accent) ? o.accent : DEF.accent,
       font: find(FONTS, o.font) ? o.font : DEF.font,

@@ -1017,6 +1017,8 @@ td.al { white-space: normal; word-break: normal; }
 .sgc-subj { font-weight: 700; border-color: var(--fg); }
 .sgc-chip[aria-pressed="true"], .sgc-subj[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
 .sgc-note { margin: 8px 0 0; font-size: .75rem; line-height: 1.5; color: var(--fg2); }
+/* m8 — 활동기록 줄의 구분 딱지(행발·과세특 · 수학…) */
+.sgc-tag { flex: none; padding: 0 5px; border: 1px solid var(--line2); font-family: var(--f-ui); font-size: .6875rem; font-weight: 700; line-height: 1.55; color: var(--fg); letter-spacing: 0; }
 
 /* 아래 탭 위치 — 맨 아래에서만(글 끝에 붙음) */
 html[data-nav="end"] .app { display: flex; flex-direction: column; }
