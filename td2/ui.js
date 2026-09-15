@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm9 · 2026-09-16';
+  var UI_VER = 'm10 · 2026-09-16';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -2759,21 +2759,14 @@
     } else segCols(sizeG, sizeB.length);          // 판이 섞인 몇 분 — 옛 prefs.js는 3단계
     box.appendChild(sizeG);
     lb('화면 색');
-    box.appendChild(radioGroup('opt-grid th', '화면 색', PR.THEMES, p.theme, function (id) { pickPref({ theme: id }); }, function (b, it) {
+    // 강조색 메뉴는 없앴다(m10) — 화면 색을 누르면 예전에 골라 둔 강조색도 기본(빨강)으로. 스킨은 제 강조색을 쓴다
+    box.appendChild(radioGroup('opt-grid th', '화면 색', PR.THEMES, p.theme, function (id) { pickPref({ theme: id, accent: 'red' }); }, function (b, it) {
       b.className = 'pick thb';
       var sw = h('span', 'sw');
       sw.setAttribute('data-t', it.id);
       sw.setAttribute('aria-hidden', 'true');
       for (var i = 0; i < 4; i++) sw.appendChild(h('i'));
       b.appendChild(sw);
-      b.appendChild(h('span', '', it.nm));
-    }));
-    lb('강조색');
-    box.appendChild(radioGroup('opt-grid c3', '강조색', PR.ACCENTS, p.accent, function (id) { pickPref({ accent: id }); }, function (b, it) {
-      b.className = 'pick acb';
-      var i = h('i');
-      i.setAttribute('aria-hidden', 'true');
-      b.appendChild(i);
       b.appendChild(h('span', '', it.nm));
     }));
     lb('글씨체');

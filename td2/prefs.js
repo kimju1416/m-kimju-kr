@@ -19,8 +19,23 @@
     { id: 'navy', nm: '네이비', hd: '#14284B' },
     { id: 'green', nm: '칠판', hd: '#1D3B2A' },
     { id: 'paper', nm: '종이', hd: '#2A241C' },
-    { id: 'hc', nm: '고대비', hd: '#000000' }
+    { id: 'hc', nm: '고대비', hd: '#000000' },
+    // 스킨 12가지(m10 · 09-16 형님 차례 그대로, 한 줄에 셋) — sk: 스킨 표시(data-sk) · css: «스킨 글꼴»일 때만 받는 제목·탭·로고 글꼴
+    { id: 'notion', nm: '노션', hd: '#FFFFFF', sk: 1, css: [] },
+    { id: 'grid', nm: '모눈노트', hd: '#F7F9F4', sk: 1, css: [FS + 'gaegu@5.3.0/700.css'] },
+    { id: 'journal', nm: '다이어리', hd: '#5B4636', sk: 1, css: [FS + 'gowun-batang@5.3.0/700.css'] },
+    { id: 'sakura', nm: '벚꽃', hd: '#F6B1C9', sk: 1, css: [FS + 'gowun-dodum@5.3.0/400.css'] },
+    { id: 'milk', nm: '딸기우유', hd: '#FFC4D4', sk: 1, css: [FS + 'jua@5.3.0/400.css'] },
+    { id: 'sunset', nm: '코랄선셋', hd: '#FF8A66', sk: 1, css: [FS + 'do-hyeon@5.3.0/400.css'] },
+    { id: 'scrap', nm: '스크랩북', hd: '#FFF1DD', sk: 1, css: [FS + 'gowun-dodum@5.3.0/400.css', FS + 'poor-story@5.3.0/400.css'] },
+    { id: 'water', nm: '수채화', hd: '#DCE6F7', sk: 1, css: [FS + 'gowun-dodum@5.3.0/400.css', FS + 'hi-melody@5.3.0/400.css'] },
+    { id: 'butter', nm: '버터토스트', hd: '#FFD95A', sk: 1, css: [FS + 'sunflower@5.3.1/700.css'] },
+    { id: 'mint', nm: '민트초코', hd: '#4A3428', sk: 1, css: [FS + 'do-hyeon@5.3.0/400.css'] },
+    { id: 'lavender', nm: '라벤더', hd: '#6D5BD0', sk: 1, css: [FS + 'gowun-dodum@5.3.0/400.css'] },
+    { id: 'neon', nm: '네온게임', hd: '#070912', sk: 1, css: [FS + 'do-hyeon@5.3.0/400.css'] }
   ];
+  // 강조색 메뉴는 m10에서 뺐다. 예전에 빨강 말고 다른 색을 골라 둔 폰은 그 색을 조용히 지키다가,
+  // 설정에서 화면 색을 누르거나 [처음대로]를 누르는 순간 빨강(기본)으로 돌아간다(ui.js). 스킨은 제 강조색을 쓴다(app.css)
   var ACCENTS = [
     { id: 'red', nm: '빨강' },
     { id: 'blue', nm: '파랑' },
@@ -29,8 +44,11 @@
     { id: 'teal', nm: '청록' }
   ];
   // css: 고르면 그때 받는 글꼴 CSS (jsdelivr만 — CSP style-src/font-src)
+  // auto(m10) = 스킨 글꼴: 기본 6가지 화면 색에선 Pretendard 그대로, 스킨에선 제목·탭·로고만 스킨 글꼴(본문은 Pretendard).
+  // 예전 저장값 'pretendard'(그때의 기본)는 auto로 읽는다 — 기본 화면 색에선 보이는 게 똑같다. 스킨에서도 Pretendard로 고정하려면 'pret'
   var FONTS = [
-    { id: 'pretendard', nm: 'Pretendard', note: '기본', css: [] },
+    { id: 'auto', nm: '스킨 글꼴', note: '기본 · 스킨이 정한 제목 글꼴', css: [] },
+    { id: 'pret', nm: 'Pretendard', note: '어느 스킨에서나 같은 글꼴', css: [] },
     { id: 'system', nm: '기기 기본 글꼴', note: '받지 않음', css: [] },
     { id: 'nanum', nm: '나눔고딕', note: '처음 고를 때 받음', css: [FS + 'nanum-gothic@5.3.0/400.css', FS + 'nanum-gothic@5.3.0/700.css', FS + 'nanum-gothic@5.3.0/800.css'] },
     { id: 'plex', nm: 'IBM Plex Sans KR', note: '처음 고를 때 받음', css: [FS + 'ibm-plex-sans-kr@5.3.0/400.css', FS + 'ibm-plex-sans-kr@5.3.0/600.css', FS + 'ibm-plex-sans-kr@5.3.0/700.css'] }
@@ -50,7 +68,7 @@
   // calWeekend: 달력에 토·일 칸 · calWeekNo: 달력 줄 왼쪽에 «1주·2주»
   // visits: 이 폰에서 자료를 받은 횟수(설치 권하기용) · installNo: 설치 권하기 띠를 닫았거나 설치함(설정의 설치 칸은 늘 보임)
   var DEF = {
-    theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal',
+    theme: 'base', accent: 'red', font: 'auto', size: 'm', start: 'last', tab: 'cal',
     navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false,
     calOrder: 'ev', showMeal: true, showOt: true,     // 오늘 탭 급식·초과근무 칸(끄면 칸째 숨김)
     visits: 0, installNo: false,
@@ -84,7 +102,7 @@
       subj: (typeof o.subj === 'string' && normSubjs([o.subj])[0]) || '',
       theme: find(THEMES, o.theme) ? o.theme : DEF.theme,
       accent: find(ACCENTS, o.accent) ? o.accent : DEF.accent,
-      font: find(FONTS, o.font) ? o.font : DEF.font,
+      font: o.font === 'pretendard' ? 'auto' : (find(FONTS, o.font) ? o.font : DEF.font),
       size: find(SIZES, o.size) ? o.size : DEF.size,
       start: find(STARTS, o.start) ? o.start : DEF.start,
       tab: TABS.indexOf(o.tab) >= 0 ? o.tab : DEF.tab,
@@ -137,7 +155,11 @@
 
   function apply(p) {
     var de = document.documentElement;
+    var th = find(THEMES, p.theme);
     de.setAttribute('data-theme', p.theme);
+    // 스킨일 때만 data-sk — 모서리·제목 글꼴 같은 스킨 공통 규칙이 기본 6가지 화면 색에 걸리지 않게
+    if (th.sk) de.setAttribute('data-sk', '');
+    else de.removeAttribute('data-sk');
     de.setAttribute('data-acc', p.accent);
     de.setAttribute('data-font', p.font);
     de.setAttribute('data-fs', p.size);
@@ -150,6 +172,8 @@
     var sb = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
     if (sb) sb.setAttribute('content', p.barColor === 'white' ? 'default' : 'black');
     find(FONTS, p.font).css.forEach(addCss);
+    // 스킨 글꼴은 «스킨 글꼴»(auto)일 때만 받는다 — 못 받으면 Pretendard로 보인다(app.css 글꼴 목록 뒤에 var(--f-brand))
+    if (th.sk && p.font === 'auto') th.css.forEach(addCss);
   }
 
   var cur = read();
@@ -203,6 +227,7 @@
     // 설정 화면에서 글꼴 미리보기용 (글꼴 파일은 보이는 글자만큼만 받는다)
     loadAllFonts: function () {
       FONTS.forEach(function (f) { f.css.forEach(addCss); });
+      find(THEMES, cur.theme).css && find(THEMES, cur.theme).css.forEach(addCss);   // «스킨 글꼴» 미리보기 — 지금 스킨의 제목 글꼴
     },
     installEvent: function () { return installEvt; },
     clearInstallEvent: function () { installEvt = null; },
