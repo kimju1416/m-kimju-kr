@@ -22,6 +22,8 @@
   var VIEW = 'td2-mobile.json';
   var P = 'td2m:';
   var KEEP_DONE = 60 * 1000;          // 반영·거절된 입력을 목록에 남겨 두는 시간
+  // 검사 전용 — 내 PC(127.0.0.1·localhost)에서만 줄일 수 있다. 배포 주소에서는 늘 1분
+  if (/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.TD2M_TEST && +window.TD2M_TEST.keepDone > 0) KEEP_DONE = +window.TD2M_TEST.keepDone;
   var POLL_WAIT = 20 * 1000;          // PC 반영을 기다리는 동안 새로 받기 간격
   var POLL_IDLE = 5 * 60 * 1000;
   var HERE = (function () {
@@ -36,7 +38,7 @@
     err: '', errCode: '', inapp: isInapp(), standalone: isStandalone(),
     needLogin: false                   // 로그인 시간이 끝났는데 글을 쓰는 중이라 구글로 안 떠나고 기다리는 중
   };
-  var started = false, pollTimer = null, flushing = false, loadingView = null;
+  var started = false, pollTimer = null, flushing = false, loadingView = null, pruneTimer = null;
 
   /* ── 작은 도구 ── */
   function lsGet(k, d) { try { var v = localStorage.getItem(P + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
@@ -212,6 +214,23 @@
       return o;
     });
     if (changed) savePending();
+    pruneApplied();
+  }
+  /* «PC에 반영됨»은 반영된 뒤 1분이 지나면 저절로 뺀다(09-16 형님) — 예전엔 다음 새로 받기(기다리는 입력이 없으면 5분)까지 남았다.
+     반영 못 한 입력은 여기서 안 뺀다 — 선생님이 까닭을 보고 닫을 때까지 남아야 한다(새로 받을 때 markPending이 정리) */
+  function pruneApplied() {
+    clearTimeout(pruneTimer);
+    pruneTimer = null;
+    var now = Date.now(), next = Infinity;
+    var keep = state.pending.filter(function (o) {
+      if (o.status !== 'applied') return true;
+      var left = (o.doneAt || now) + KEEP_DONE - now;
+      if (left <= 0) return false;
+      next = Math.min(next, left);
+      return true;
+    });
+    if (keep.length !== state.pending.length) { state.pending = keep; emit(); }
+    if (next !== Infinity) pruneTimer = setTimeout(pruneApplied, next + 300);
   }
   function merge(a, b) { var o = {}; Object.keys(a).forEach(function (k) { o[k] = a[k]; }); Object.keys(b).forEach(function (k) { o[k] = b[k]; }); return o; }
   function savePending() {
