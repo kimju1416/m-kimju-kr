@@ -98,6 +98,7 @@ html {
   font-size: 100%;
   -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
   overscroll-behavior-y: contain;      /* 크롬 기본 «당겨서 페이지 새로 고침» 대신 자료만 새로 받기 */
+  touch-action: pan-x pan-y;           /* m12 — 두 손가락 확대·두 번 눌러 확대 막기(위아래·좌우로 미는 것은 그대로) */
   background: var(--bg);
 }
 /* 글자 크기 5단계 — 작게·보통·크게는 예전 값 그대로, 양 끝에 하나씩 */

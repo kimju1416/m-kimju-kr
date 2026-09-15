@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm11 · 2026-09-16';
+  var UI_VER = 'm12 · 2026-09-16';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -3265,7 +3265,8 @@
      뷰포트 설정(width=device-width)이 안 먹은 상태다 — 흉내로 재면 폭 980·배율 0.42·600px 넘는 화면용 바탕색까지 캡처와 같다.
      → 폭이 폰 화면보다 넓거나 배율이 줄어 굳었으면 ① 뷰포트 설정을 새로 넣고 ② 그래도 그대로면 한 번만 새로 고친다.
      «PC 버전 사이트» 모드(UA에 Android·iPhone 없음)는 일부러 넓게 보는 것이라 새로 고치지 않는다. */
-  var VP = 'width=device-width, initial-scale=1, viewport-fit=cover';
+  // index.html의 뷰포트 설정과 글자까지 같아야 한다(vpFix가 다시 넣을 때 확대 막기가 풀리지 않게) — scratchpad zoomcheck.js가 둘을 맞춰 본다
+  var VP = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
   function vpBad() {
     if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) return false;
     var cw = document.documentElement.clientWidth || window.innerWidth || 0;
@@ -3300,6 +3301,14 @@
   window.addEventListener('load', function () { setTimeout(vpFix, 50); });
   document.addEventListener('focusout', function () { setTimeout(vpFix, 300); });
   setTimeout(vpFix, 0);
+
+  /* 두 손가락 확대 막기(m12 · 09-16 형님 «앱처럼 확대 안 되게 막자»).
+     안드로이드 크롬은 위 뷰포트 설정(user-scalable=no)만으로 막힌다.
+     아이폰은 애플이 iOS 10부터 그 설정을 접근성 때문에 무시한다 → 사파리에만 있는 두 손가락 신호(gesture*)를 직접 막는다.
+     폰 자체의 «디스플레이 확대»나 접근성 돋보기는 그대로 쓸 수 있고, 글자는 설정 [글자 크기] 5단계·[달력 크기]로 키운다. */
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) {
+    document.addEventListener(t, function (e) { e.preventDefault(); }, { passive: false });
+  });
 
   // ── 고정 요소 연결 ───────────────────────
   $('btn-refresh').appendChild(icon('refresh'));
