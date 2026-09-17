@@ -65,7 +65,7 @@
   var CALSIZES = [{ id: 'm', nm: '보통' }, { id: 'l', nm: '크게' }, { id: 'xl', nm: '아주 크게' }];
   // 캘린더 탭 차례 — 일정 먼저(지금 그대로, 기본) / 할 일 먼저(09-15 형님 «지금 순서 마음에 드는데 옵션으로»)
   var CALORDERS = [{ id: 'ev', nm: '일정 먼저' }, { id: 'todo', nm: '할 일 먼저' }];
-  var TABS = ['cal', 'today', 'memo', 'stu'];
+  var TABS = ['cal', 'today', 'memo', 'stu', 'wk'];
   // calWeekend: 달력에 토·일 칸 · calWeekNo: 달력 줄 왼쪽에 «1주·2주»
   // visits: 이 폰에서 자료를 받은 횟수(설치 권하기용) · installNo: 설치 권하기 띠를 닫았거나 설치함(설정의 설치 칸은 늘 보임)
   var DEF = {

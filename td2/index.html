@@ -3,7 +3,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://cdn.jsdelivr.net; font-src https://cdn.jsdelivr.net; connect-src 'self' https://www.googleapis.com https://openidconnect.googleapis.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://cdn.jsdelivr.net; font-src https://cdn.jsdelivr.net; connect-src 'self' https://www.googleapis.com https://openidconnect.googleapis.com; img-src 'self' data: blob:; frame-src blob:; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex">
@@ -30,9 +30,9 @@
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <!-- ?v= — 판을 올릴 때 함께 바꾼다. 안 바꾸면 폰이 옛 파일을 붙잡아 새 화면과 옛 스크립트가 섞인다 -->
-<link rel="stylesheet" href="./app.css?v=m12">
+<link rel="stylesheet" href="./app.css?v=m13">
 <!-- 폰마다 저장한 화면 설정을 첫 그림 전에 붙인다(깜빡임 방지) -->
-<script src="./prefs.js?v=m12"></script>
+<script src="./prefs.js?v=m13"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -150,6 +150,11 @@
       <div id="memo-list"></div>
     </section>
 
+    <!-- 5) 주간학습안내 — PC가 실었을 때만 탭이 보인다(PC 3.43 설정 «주간학습안내도 폰에») -->
+    <section class="view" id="v-wk" role="tabpanel" aria-labelledby="tab-wk" hidden>
+      <div id="wk-body"></div>
+    </section>
+
     <!-- 4) 학생 -->
     <section class="view" id="v-stu" role="tabpanel" aria-labelledby="tab-stu" hidden>
       <div id="stu-cls"></div>
@@ -165,6 +170,7 @@
     <button class="tab" type="button" role="tab" id="tab-today" aria-controls="v-today" aria-selected="false">오늘</button>
     <button class="tab" type="button" role="tab" id="tab-memo" aria-controls="v-memo" aria-selected="false">메모</button>
     <button class="tab" type="button" role="tab" id="tab-stu" aria-controls="v-stu" aria-selected="false">학생</button>
+    <button class="tab" type="button" role="tab" id="tab-wk" aria-controls="v-wk" aria-selected="false" hidden>주간학습</button>
   </nav>
 
   <!-- 여러 명 선택 때 아래 고정 단추 -->
@@ -250,8 +256,8 @@
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </div>
 
-<script src="./core.js?v=m12"></script>
-<script src="./chips.js?v=m12"></script>
-<script src="./ui.js?v=m12"></script>
+<script src="./core.js?v=m13"></script>
+<script src="./chips.js?v=m13"></script>
+<script src="./ui.js?v=m13"></script>
 </body>
 </html>

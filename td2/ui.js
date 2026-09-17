@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm12 · 2026-09-16';
+  var UI_VER = 'm13 · 2026-09-18';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -228,7 +228,7 @@
   }
 
   // ── UI 상태 ─────────────────────────────
-  var TABS = ['cal', 'today', 'memo', 'stu'];
+  var TABS = ['cal', 'today', 'memo', 'stu', 'wk'];
   var p0 = prefs();
   var ui = {
     tab: p0.start !== 'last' ? p0.start : p0.tab,
@@ -247,6 +247,7 @@
     opMeta: {},                 // 고침·지움 입력의 옛/새 글자(«반영됨» 줄 찾기·대기 목록 이름용, 메모리에만)
     visitCounted: false,
     am: null, amSrc: null,
+    wkWeek: '', wkView: '', wkDay: -1,       // 주간학습 탭 — 보고 있는 주(월요일)·보기(day|week|subj|orig)·하루 보기의 날
     toastTimer: 0, queued: false
   };
   if (TABS.indexOf(ui.tab) < 0) ui.tab = 'cal';
@@ -314,6 +315,9 @@
           if (p.t !== undefined) x.t = String(p.t);
           if (p.due !== undefined) x.due = p.due;
           x.mark = 'wait';
+          /* 고침이 PC에 들어가면 이 할 일의 지문(fp)이 바뀐다 — 그 전에 옛 지문으로 지우기·체크를 보내면 PC가 못 찾아
+             «지워졌다»로 넘기거나 거절한다(m13 · 09-15 검수 5번). 반영될 때까지 손대지 못하게 표시한다 */
+          x.editing = true;
         } else if (o.status === 'applied') {
           meta = ui.opMeta[o.id];
           if (!meta) return;
@@ -350,7 +354,7 @@
         if (isActive(o)) added.unshift({ fp: '', t: String(p.t || ''), c: first.c, card: first.card, mark: 'wait', isNew: true });
         else if (o.status === 'applied') markApplied(list, o, function (r) { return r.t === p.t; });
       } else if (o.type === 'memo.edit') {
-        if (isActive(o)) { if (x) { x.t = String(p.t || ''); x.mark = 'wait'; } }
+        if (isActive(o)) { if (x) { x.t = String(p.t || ''); x.mark = 'wait'; x.editing = true; } }   // 고침 반영 전엔 지우기·다시 고치기 막음(할 일과 같은 까닭)
         else if (o.status === 'applied') {
           meta = ui.opMeta[o.id];
           var want = meta ? meta.t : p.t;
@@ -712,6 +716,10 @@
   // ── 탭 (학생 탭은 늘 보인다 — 꺼져 있으면 켜는 방법을 안내) ──
   function renderTabs() {
     $('tab-stu').hidden = false;
+    // 주간학습 탭은 PC가 실었을 때만(설정을 켠 초등 담임) — 꺼지면 보던 사람은 캘린더로
+    var wkOn = wkWeeks().length > 0;
+    $('tab-wk').hidden = !wkOn;
+    if (!wkOn && ui.tab === 'wk') ui.tab = 'cal';
     TABS.forEach(function (t) {
       var b = $('tab-' + t);
       var on = ui.tab === t;
@@ -725,6 +733,7 @@
     else if (ui.tab === 'today') renderToday();
     else if (ui.tab === 'memo') renderMemo();
     else if (ui.tab === 'stu') renderStu();
+    else if (ui.tab === 'wk') renderWk();
   }
   function setTab(t) {
     if (ui.tab === t) { window.scrollTo(0, 0); return; }
@@ -1216,6 +1225,7 @@
     if (x.isNew) { toast('PC에 반영된 뒤에 체크할 수 있습니다'); return; }
     if (!x.fp) return;
     if (x.del) { toast('지우기를 기다리고 있습니다'); return; }
+    if (x.editing) { toast('고친 내용이 PC에 반영된 뒤에 체크할 수 있습니다'); return; }
     if (x.rep) {
       if (x.srcDone) { toast('반복 할 일은 PC에서 되돌려 주세요'); return; }
       if (x.mark === 'next') { toast('이미 다음 회차로 넘김을 기다리고 있습니다'); return; }
@@ -1653,6 +1663,250 @@
     $('memo-t').blur();
     formErr('memo-err', '');
     toast('메모를 적었습니다 · PC 반영 대기');
+  }
+
+  // ── 5) 주간학습안내(m13 · PC 3.43~) ──
+  /* PC 주간학습안내 카드를 그대로 옮긴다: 지난주·이번 주·다음 주 × 하루·주간·과목별·원본.
+     🔴 표는 PC가 읽고 선생님이 고친 그대로 — 폰은 계산하지 않는다. 글자는 모두 textContent(안내문에 무엇이 들었는지 모른다).
+     원본: 사진·PDF는 드라이브 f- 파일을 받아 메모리에서만 띄우고(TD2M.file), 한글·워드는 PC가 읽은 표 글(md)을 표로 그린다. */
+  function wkWeeks() {
+    var v = V();
+    var w = v && v.weekly && typeof v.weekly === 'object' && !Array.isArray(v.weekly) ? v.weekly : null;
+    return w ? Object.keys(w).filter(function (k) { return isYmd(k) && w[k] && typeof w[k] === 'object'; }).sort() : [];
+  }
+  function mondayOf(ds) { var dow = dowOf(ds); return addDays(ds, -(dow === 0 ? 6 : dow - 1)); }
+  function wkHasGrid(d) { return arr(d.days).some(function (x) { return x && arr(x.periods).length; }); }
+  function wkTail(ps) { return [ps.pages, ps.place].filter(function (s) { return s; }).map(String).join(' · '); }
+  function wkDayName(x) {
+    if (!x) return '';
+    if (typeof x.dow === 'number') return DOW[x.dow] || '';
+    return String(x.dow || (isYmd(x.date) ? DOW[dowOf(x.date)] : ''));
+  }
+  function renderWk() {
+    var box = $('wk-body');
+    clear(box);
+    var ks = wkWeeks();
+    if (!ks.length) { box.appendChild(empty('PC에서 주간학습안내를 올리고 [폰 연동 → 주간학습안내도]를 켜면 여기에 나옵니다')); return; }
+    var cur = mondayOf(today());
+    if (ks.indexOf(ui.wkWeek) < 0) ui.wkWeek = ks.indexOf(cur) >= 0 ? cur : (ks.filter(function (k) { return k > cur; })[0] || ks[ks.length - 1]);
+    var items = ks.map(function (k) {
+      return { id: k, nm: k === cur ? '이번 주' : k === addDays(cur, -7) ? '지난주' : k === addDays(cur, 7) ? '다음 주' : md(k) + ' 주' };
+    });
+    box.appendChild(segCols(radioGroup('segr wk-weeks', '주 고르기', items, ui.wkWeek, function (id) { ui.wkWeek = id; ui.wkDay = -1; renderWk(); }, textBtn), items.length));
+    var d = V().weekly[ui.wkWeek] || {};
+    var can = { day: wkHasGrid(d), week: wkHasGrid(d), subj: arr(d.rows).length > 0 || wkHasGrid(d), orig: !!d.src };
+    var all = [{ id: 'day', nm: '하루' }, { id: 'week', nm: '주간' }, { id: 'subj', nm: '과목별' }, { id: 'orig', nm: '원본' }].filter(function (x) { return can[x.id]; });
+    var span = (isYmd(d.from) ? md(d.from) : md(ui.wkWeek)) + (isYmd(d.to) ? ' ~ ' + md(d.to) : '');
+    box.appendChild(sec('주간학습안내' + (d.cls ? ' · ' + d.cls : ''), span));
+    if (!all.length) { box.appendChild(empty('이 주에는 읽어 둔 표도 원본도 없습니다')); return; }
+    var view = can[ui.wkView] ? ui.wkView : (can.day ? 'day' : can.subj ? 'subj' : 'orig');
+    if (all.length > 1) box.appendChild(segCols(radioGroup('segr wk-views', '보기', all, view, function (id) { ui.wkView = id; renderWk(); }, textBtn), all.length));
+    if (view === 'day') wkDay(box, d);
+    else if (view === 'week') wkWeek(box, d);
+    else if (view === 'subj') wkSubj(box, d);
+    else wkOrig(box, d);
+    if (view !== 'orig') wkNotices(box, d);
+  }
+  function wkNotices(box, d) {
+    arr(d.notices).slice(0, 3).forEach(function (t) {
+      var p = h('p', 'wk-note');
+      p.appendChild(h('b', null, '안내'));
+      p.appendChild(document.createTextNode(' ' + String(t)));
+      box.appendChild(p);
+    });
+  }
+  function wkDay(box, d) {
+    var days = arr(d.days);
+    var t = today();
+    var i = ui.wkDay;
+    if (!(i >= 0 && i < days.length)) {
+      i = -1;
+      days.forEach(function (x, k) { if (i < 0 && x && x.date === t) i = k; });
+      if (i < 0) days.forEach(function (x, k) { if (i < 0 && wkDayName(x) === DOW[dowOf(t)]) i = k; });
+      if (i < 0) i = 0;
+    }
+    var x = days[i] || {};
+    var bar = h('div', 'wk-dayhd');
+    bar.appendChild(btn('wk-nav', '‹', function () { ui.wkDay = (i - 1 + days.length) % days.length; renderWk(); }));
+    bar.lastChild.setAttribute('aria-label', '전날');
+    bar.appendChild(h('b', null, wkDayName(x) + (isYmd(x.date) ? ' (' + (+x.date.slice(8, 10)) + '일)' : '') + (x.date === t ? ' · 오늘' : '')));
+    bar.appendChild(btn('wk-nav', '›', function () { ui.wkDay = (i + 1) % days.length; renderWk(); }));
+    bar.lastChild.setAttribute('aria-label', '다음날');
+    box.appendChild(bar);
+    var ps = arr(x.periods);
+    if (!ps.length) { box.appendChild(empty('이 날은 수업이 없습니다')); }
+    else {
+      var tb = table(['2.6em', '5.2em', ''], 'wk-day');
+      var body = h('tbody');
+      ps.forEach(function (p) {
+        var tr = h('tr');
+        tr.appendChild(td('c num', String(p.p || '')));
+        var s = td('wk-s', String(p.subject || ''));
+        if (p.exam) s.appendChild(h('span', 'wk-exam', '평가'));
+        tr.appendChild(s);
+        var c = td('wk-c', String(p.content || ''));
+        var tail = wkTail(p);
+        if (tail) c.appendChild(h('span', 'wk-tail', tail));
+        tr.appendChild(c);
+        body.appendChild(tr);
+      });
+      tb.appendChild(body);
+      box.appendChild(tb);
+    }
+    var foot = [x.prep ? '준비물 ' + x.prep : '', x.event ? '행사 ' + x.event : ''].filter(function (s) { return s; });
+    foot.forEach(function (s) { box.appendChild(h('p', 'wk-note', s)); });
+  }
+  function wkWeek(box, d) {
+    var days = arr(d.days).slice(0, 7);
+    var maxP = 0;
+    days.forEach(function (x) { arr(x && x.periods).forEach(function (p) { maxP = Math.max(maxP, +p.p || 0); }); });
+    if (!maxP) maxP = 6;
+    var t = today();
+    var wrap = h('div', 'wk-scroll');
+    var widths = ['2em'];
+    days.forEach(function () { widths.push(''); });
+    var tb = table(widths, 'wk-grid');
+    var head = h('thead'), hr = h('tr');
+    hr.appendChild(h('th', null, ''));
+    days.forEach(function (x) {
+      var th = h('th', x && x.date === t ? 'tdy' : null, wkDayName(x) + (x && isYmd(x.date) ? ' ' + (+x.date.slice(8, 10)) : ''));
+      hr.appendChild(th);
+    });
+    head.appendChild(hr);
+    tb.appendChild(head);
+    var body = h('tbody');
+    for (var p = 1; p <= maxP; p++) {
+      var tr = h('tr');
+      tr.appendChild(td('c num', String(p)));
+      days.forEach(function (x) {
+        var ps = arr(x && x.periods).filter(function (v) { return +v.p === p; })[0];
+        var cell = td(x && x.date === t ? 'wk-cell tdy' : 'wk-cell', '');
+        if (ps) {
+          var sb = h('b', null, String(ps.subject || ''));
+          if (ps.exam) sb.appendChild(h('i', 'wk-exam', '평가'));
+          cell.appendChild(sb);
+          if (ps.content) cell.appendChild(h('span', null, String(ps.content)));
+        }
+        tr.appendChild(cell);
+      });
+      body.appendChild(tr);
+    }
+    tb.appendChild(body);
+    wrap.appendChild(tb);
+    box.appendChild(wrap);
+  }
+  function wkSubj(box, d) {
+    var rows = arr(d.rows).slice();
+    if (!rows.length) {
+      // 시간표형이어도 과목별로 묶는다 — 같은 내용은 한 줄로 접고 몇 시간인지만(PC와 같은 규칙)
+      var order = [], by = {};
+      arr(d.days).forEach(function (x) {
+        arr(x && x.periods).forEach(function (ps) {
+          var k = String(ps.subject || '').replace(/\s/g, '');
+          if (!by[k]) { by[k] = { list: [], idx: {} }; order.push(k); }
+          var kk = (ps.content || '') + '|' + (ps.pages || '') + '|' + (ps.unit || '');
+          // 묶인 수업 중 하나라도 평가면 «평가»를 붙인다(첫 시간만 보면 수요일 평가가 묻힌다)
+          if (Object.prototype.hasOwnProperty.call(by[k].idx, kk)) { var g0 = by[k].list[by[k].idx[kk]]; g0.cnt++; if (ps.exam) g0.exam = true; return; }
+          by[k].idx[kk] = by[k].list.length;
+          by[k].list.push({ subject: ps.subject, unit: ps.unit || '', content: ps.content || '', pages: ps.pages || '', exam: !!ps.exam, cnt: 1 });
+        });
+      });
+      order.forEach(function (k) { rows = rows.concat(by[k].list); });
+    }
+    if (!rows.length) { box.appendChild(empty('읽어 둔 표가 없습니다')); return; }
+    var tb = table(['5.2em', ''], 'wk-subj');
+    var body = h('tbody');
+    var prev = null;
+    rows.forEach(function (r) {
+      var first = String(r.subject) !== prev;
+      prev = String(r.subject);
+      var tr = h('tr', first ? 'wk-g0' : null);
+      tr.appendChild(td('wk-s', first ? String(r.subject || '') : ''));
+      var c = td('wk-c', String(r.content || ''));
+      if (r.exam) c.appendChild(h('span', 'wk-exam', '평가'));
+      if (r.cnt > 1) c.appendChild(h('span', 'wk-cnt', r.cnt + '시간'));
+      var tail = [r.unit, r.pages, r.n].filter(function (s) { return s; }).map(String).join(' · ');
+      if (tail) c.appendChild(h('span', 'wk-tail', tail));
+      tr.appendChild(c);
+      body.appendChild(tr);
+    });
+    tb.appendChild(body);
+    box.appendChild(tb);
+  }
+  var WK_MISS = {
+    big: '원본이 커서(10MB 넘음) 폰으로 가져오지 않았습니다 — PC에서 보세요',
+    gone: 'PC에서 원본 파일을 찾지 못했습니다(옮겼거나 지웠을 수 있어요) — 위 표는 그대로 볼 수 있습니다',
+    unread: '이 한글·워드 파일을 PC가 읽지 못했습니다 — PC에서 보세요'
+  };
+  function wkOrig(box, d) {
+    var s = d.src || {};
+    if (s.name) box.appendChild(h('p', 'wk-fname', String(s.name)));
+    if (s.miss || (s.kind !== 'doc' && !s.file) || (s.kind === 'doc' && !s.md)) {
+      box.appendChild(empty(WK_MISS[s.miss] || '원본을 폰으로 가져오지 못했습니다 — PC에서 보세요'));
+      return;
+    }
+    if (s.kind === 'doc') { wkMd(box, String(s.md)); return; }
+    var st = h('p', 'empty', '원본을 받는 중…');
+    box.appendChild(st);
+    var want = ui.wkWeek + '|' + s.file;
+    M.file(s.file).then(function (url) {
+      if (ui.tab !== 'wk' || (ui.wkWeek + '|' + (((V().weekly || {})[ui.wkWeek] || {}).src || {}).file) !== want || !st.parentNode) return;   // 그새 다른 주·탭으로 갔다
+      var holder = h('div', 'wk-orig');
+      if (s.kind === 'pdf') {
+        var f = document.createElement('iframe');
+        f.className = 'wk-pdf';
+        f.title = String(s.name || '주간학습안내 PDF');
+        f.src = url;
+        holder.appendChild(f);
+      } else {
+        var im = document.createElement('img');
+        im.className = 'wk-img';
+        im.alt = String(s.name || '주간학습안내 사진');
+        im.src = url;
+        holder.appendChild(im);
+      }
+      st.parentNode.replaceChild(holder, st);
+      // 새 창에서 크게 — 폰 화면에서 두 손가락 확대를 막아 두었으니(m12) 원본은 새 창에서 마음껏 키운다
+      box.appendChild(btn('pbtn in wk-open', '새 창에서 크게 보기', function () { window.open(url, '_blank'); }));
+    }, function (err) {
+      if (!st.parentNode) return;
+      st.textContent = (err && err.message) || '원본을 받지 못했습니다';
+      box.appendChild(btn('pbtn in wk-open', '다시 받기', function () { renderWk(); }));
+    });
+  }
+  /* PC가 읽은 한글·워드 표 글(markdown 비슷) — «|»로 된 줄은 표로, 나머지는 문단으로. 글자는 textContent로만 */
+  function wkMd(box, md) {
+    var lines = md.replace(/\r\n?/g, '\n').split('\n');
+    var i = 0, n = 0;
+    while (i < lines.length && n < 400) {
+      var l = lines[i];
+      if (/^\s*\|/.test(l)) {
+        var rows = [];
+        while (i < lines.length && /^\s*\|/.test(lines[i])) {
+          var cells = lines[i].trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(function (c) { return c.trim(); });
+          if (!cells.every(function (c) { return /^:?-{2,}:?$/.test(c) || c === ''; }) || !cells.some(function (c) { return /-/.test(c); })) rows.push(cells);
+          i++;
+        }
+        if (rows.length) {
+          var wrap = h('div', 'wk-scroll');
+          var tb = h('table', 't wk-md');
+          var body = h('tbody');
+          rows.forEach(function (r, k) {
+            var tr = h('tr');
+            r.forEach(function (c) { tr.appendChild(h(k === 0 ? 'th' : 'td', null, c.replace(/<br\s*\/?>/gi, '\n'))); });
+            body.appendChild(tr);
+          });
+          tb.appendChild(body);
+          wrap.appendChild(tb);
+          box.appendChild(wrap);
+          n += rows.length;
+        }
+        continue;
+      }
+      var txt = l.replace(/^#+\s*/, '').trim();
+      if (txt) { box.appendChild(h('p', 'wk-p', txt)); n++; }
+      i++;
+    }
   }
 
   // ── 4) 학생: 반 고르기 → 날짜 → 명렬(한 명 누르기 / 여러 명 선택) ──
@@ -2431,6 +2685,7 @@
   function openTodoEdit(x) {
     if (x.isNew || !x.fp) { toast('PC에 반영된 뒤에 고칠 수 있습니다'); return; }
     if (x.del) { toast('지우기를 기다리고 있습니다'); return; }
+    if (x.editing) { toast('고친 내용이 PC에 반영된 뒤에 다시 고치거나 지울 수 있습니다'); return; }
     fsOpen('할 일 고치기', function (body) {
       var ed = h('div', 'ed');
       ed.appendChild(fLabel('할 일', 'fs-t'));
@@ -2476,6 +2731,7 @@
   function openMemoEdit(m) {
     if (m.isNew || !m.fp) { toast('PC에 반영된 뒤에 고칠 수 있습니다'); return; }
     if (m.del) { toast('지우기를 기다리고 있습니다'); return; }
+    if (m.editing) { toast('고친 내용이 PC에 반영된 뒤에 다시 고치거나 지울 수 있습니다'); return; }
     fsOpen('메모 고치기', function (body) {
       body.appendChild(h('p', 'fs-now', m.card + ' 카드'));
       var ed = h('div', 'ed');

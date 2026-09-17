@@ -1298,3 +1298,34 @@ html[data-sk] .bar { border-radius: var(--bar-rad); }
 html[data-sk] .b-two { border-radius: var(--two-rad); }
 html[data-sk][data-font="auto"] .b-name { font-family: var(--f-logo); }
 html[data-sk][data-font="auto"] .sec h2, html[data-sk][data-font="auto"] .tab { font-family: var(--f-head); }
+
+/* ── 주간학습안내 탭(m13 · PC 3.43~) — PC 주간학습 카드를 폰 표로 ── */
+.wk-weeks { margin-bottom: 6px; }
+.wk-views { margin-top: 8px; }
+.wk-dayhd { display: flex; align-items: center; gap: 8px; padding: 6px calc(10px + var(--sar)) 6px calc(10px + var(--sal)); border-bottom: 1px solid var(--line); }
+.wk-dayhd b { flex: 1 1 auto; text-align: center; font-size: .9375rem; }
+.wk-nav { min-width: 44px; min-height: 44px; border: 1px solid var(--fg); background: var(--field); color: var(--fg); font-size: 1.125rem; font-weight: 700; cursor: pointer; }
+table.t .wk-s { font-weight: 700; word-break: keep-all; }
+table.t .wk-c { word-break: keep-all; overflow-wrap: anywhere; white-space: pre-line; }
+.wk-tail, .wk-cnt { display: block; margin-top: 2px; font-size: .71875rem; color: var(--fg2); }
+.wk-cnt { display: inline-block; margin: 0 0 0 6px; }
+.wk-exam { display: inline-block; margin-left: 6px; padding: 0 5px; border: 1px solid var(--acc); color: var(--acc); font-size: .6875rem; font-weight: 700; vertical-align: 1px; }
+table.t tr.wk-g0 td { border-top: 1.5px solid var(--line2); }
+.wk-note { margin: 0; padding: 7px calc(10px + var(--sar)) 7px calc(10px + var(--sal)); border-bottom: 1px solid var(--line); font-size: .78125rem; color: var(--fg2); word-break: keep-all; }
+.wk-note b { color: var(--fg); margin-right: 2px; }
+/* 주간 표는 다섯 요일이라 좁은 폰에선 옆으로 민다(화면 전체는 가로로 안 넘친다) */
+.wk-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table.t.wk-grid { min-width: 520px; }
+table.t.wk-grid th.tdy, table.t.wk-grid td.tdy { background: var(--band); }
+table.t .wk-cell { font-size: .71875rem; line-height: 1.3; }
+table.t .wk-cell b { display: block; font-size: .78125rem; }
+table.t .wk-cell b .wk-exam { font-style: normal; margin-left: 4px; padding: 0 3px; font-size: .625rem; }
+table.t .wk-cell span { display: block; color: var(--fg2); word-break: keep-all; overflow-wrap: anywhere; }
+table.t.wk-md { table-layout: auto; min-width: 100%; }
+table.t.wk-md th, table.t.wk-md td { white-space: pre-line; word-break: keep-all; min-width: 3.5em; }
+.wk-p { margin: 0; padding: 6px calc(10px + var(--sar)) 6px calc(10px + var(--sal)); font-size: .8125rem; line-height: 1.5; word-break: keep-all; }
+.wk-fname { margin: 0; padding: 6px calc(10px + var(--sar)) 0 calc(10px + var(--sal)); font-size: .71875rem; color: var(--fg2); overflow-wrap: anywhere; }
+.wk-orig { padding: 8px calc(10px + var(--sar)) 0 calc(10px + var(--sal)); }
+.wk-img { display: block; width: 100%; height: auto; border: 1px solid var(--line); background: #fff; }
+.wk-pdf { display: block; width: 100%; height: 70vh; border: 1px solid var(--line); background: #fff; }
+.wk-open { margin-top: 10px; }

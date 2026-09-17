@@ -134,6 +134,7 @@
           throw gErr('http', '구글 드라이브에 잠시 연결하지 못했습니다(오류 ' + r.status + ') — [다시 시도]를 눌러 주세요');
         });
       }
+      if (raw === 'blob') return r.blob();
       if (raw) return r.text();
       return r.status === 204 ? null : r.json().catch(function () { throw gErr('net', '구글 드라이브가 아닌 응답이 왔습니다 — 와이파이가 막고 있을 수 있어요'); });
     });
@@ -163,6 +164,7 @@
     lsSet('view', null);
     state.view = null;
     state.viewAt = 0;
+    dropFiles();                          // 앞 계정에서 받은 주간학습 원본도 버린다
     state.pending = state.pending.map(function (o) { return o.acct ? o : merge(o, { acct: prev }); });
     savePending();
   }
@@ -199,6 +201,33 @@
     loadingView.then(done, done);
     return loadingView;
   }
+  /* ── 주간학습안내 원본(m13 · PC 3.43~) ──
+     PC가 드라이브 앱 칸에 올린 «f-해시.확장자» 파일을 이름으로 찾아 받는다. 🔴 폰은 f- 파일을 **읽기만** 한다(PC가 사진 청소로 지운다).
+     받은 것은 **메모리에만**(blob 주소) — 수업 자료를 폰 저장소에 남기지 않는다. 로그아웃하면 버린다.
+     드라이브에는 종류 없이(octet-stream) 올라가므로 확장자로 종류를 붙인다 — 안 붙이면 PDF가 화면에 안 열린다. */
+  var fileUrls = {};
+  var FILE_TYPES = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp' };
+  function fileUrl(name) {
+    var m = /^f-[0-9a-f]{32}\.([a-z0-9]{1,8})$/i.exec(String(name || ''));
+    if (!m || !FILE_TYPES[m[1].toLowerCase()]) return Promise.reject(gErr('not-found', '원본 파일 이름이 올바르지 않습니다'));
+    if (fileUrls[name]) return fileUrls[name];
+    var q = new URLSearchParams({ spaces: 'appDataFolder', q: "name='" + name + "'", pageSize: '5', fields: 'files(id,name)' });
+    var p = api('GET', EP.api + '/drive/v3/files?' + q.toString()).then(function (j) {
+      var f = j && Array.isArray(j.files) ? j.files.filter(function (x) { return x.name === name; })[0] : null;
+      if (!f) throw gErr('not-found', '원본이 아직 드라이브에 없습니다 — PC가 켜져 있으면 곧 올라옵니다');
+      return api('GET', EP.api + '/drive/v3/files/' + encodeURIComponent(f.id) + '?alt=media', null, null, 'blob');
+    }).then(function (b) {
+      return URL.createObjectURL(new Blob([b], { type: FILE_TYPES[m[1].toLowerCase()] }));
+    });
+    fileUrls[name] = p;
+    p.catch(function () { if (fileUrls[name] === p) delete fileUrls[name]; });   // 실패는 기억하지 않는다 — 다시 누르면 다시 받는다
+    return p;
+  }
+  function dropFiles() {
+    Object.keys(fileUrls).forEach(function (k) { fileUrls[k].then(function (u) { try { URL.revokeObjectURL(u); } catch (e) { /* 그만 */ } }, function () { }); });
+    fileUrls = {};
+  }
+
   function markPending(v) {
     var ap = {}, rj = {};
     (v.applied || []).forEach(function (id) { ap[id] = 1; });
@@ -344,6 +373,7 @@
   }
   function logout() {
     ['tok', 'email', 'view', 'pending', 'silentAt', 'rd'].forEach(function (k) { lsSet(k, null); });
+    dropFiles();
     clearTimeout(pollTimer);
     set({ phase: 'login', email: '', view: null, viewAt: 0, pending: [], busy: false, err: '', errCode: '', needLogin: false });
   }
@@ -378,5 +408,5 @@
   }
 
   // canLeave — 화면(ui.js)이 채운다: 글을 쓰는 중이면 false(silent가 구글로 떠나지 않는다)
-  window.TD2M = { state: state, on: on, start: start, login: login, logout: logout, refresh: refresh, op: op, openExternal: openExternal, held: held, canLeave: null };
+  window.TD2M = { state: state, on: on, start: start, login: login, logout: logout, refresh: refresh, op: op, openExternal: openExternal, held: held, file: fileUrl, canLeave: null };
 })();
