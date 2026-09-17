@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm13 · 2026-09-18';
+  var UI_VER = 'm14 · 2026-09-18';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -1875,7 +1875,51 @@
     });
   }
   /* PC가 읽은 한글·워드 표 글(markdown 비슷) — «|»로 된 줄은 표로, 나머지는 문단으로. 글자는 textContent로만 */
+  /* 한글·워드 원본은 PC가 읽어 준 글이다 — 표가 **HTML**로 오는 판도 있고(한글 파일) 마크다운 표로 오는 판도 있다.
+     🔴 HTML을 글자로 그대로 뿌리면 <table><tr><td>가 화면에 보인다(형님 09-18 제보).
+        태그를 실행하지 않고(innerHTML 안 씀) DOMParser로 읽어 **표만 우리 표로 다시 그린다.** */
+  function wkHtmlDoc(box, md) {
+    var doc = null;
+    try { doc = new DOMParser().parseFromString(md, 'text/html'); } catch (e) { doc = null; }
+    if (!doc || !doc.body) { box.appendChild(h('p', 'wk-p', md.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 4000))); return; }
+    var cellText = function (td) {
+      var t = '';
+      [].forEach.call(td.childNodes, function (nd) {
+        if (nd.nodeType === 3) t += nd.nodeValue;
+        else if (nd.nodeName === 'BR') t += '\n';
+        else t += nd.textContent || '';
+      });
+      return t.replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
+    };
+    var n = 0;
+    [].forEach.call(doc.body.querySelectorAll('table'), function (t) {
+      if (n > 12 || t.querySelector('table')) return;              // 표 안 표는 안쪽만 그린다(겹쳐 그리지 않게)
+      var rows = [].filter.call(t.querySelectorAll('tr'), function (tr) { return tr.querySelector('td, th'); });
+      if (!rows.length) return;
+      var wrap = h('div', 'wk-scroll'), tb = h('table', 't wk-md'), body = h('tbody');
+      rows.slice(0, 200).forEach(function (tr, k) {
+        var row = h('tr');
+        [].forEach.call(tr.querySelectorAll('td, th'), function (td) {
+          var cell = h(k === 0 ? 'th' : 'td', null, cellText(td));
+          var cs = +td.getAttribute('colspan'), rs = +td.getAttribute('rowspan');
+          if (cs > 1) cell.setAttribute('colspan', Math.min(cs, 12));
+          if (rs > 1) cell.setAttribute('rowspan', Math.min(rs, 30));
+          row.appendChild(cell);
+        });
+        body.appendChild(row);
+      });
+      tb.appendChild(body); wrap.appendChild(tb); box.appendChild(wrap); n++;
+    });
+    // 표 밖 글(알림 문구 등)
+    [].forEach.call(doc.body.querySelectorAll('p, h1, h2, h3, h4, li'), function (el) {
+      if (el.closest('table')) return;
+      var t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t && n < 60) { box.appendChild(h('p', 'wk-p', t)); n++; }
+    });
+    if (!n) box.appendChild(h('p', 'wk-p', (doc.body.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 4000)));
+  }
   function wkMd(box, md) {
+    if (/<\s*(table|tr|td|th|p|div)[\s>]/i.test(md)) { wkHtmlDoc(box, md); return; }
     var lines = md.replace(/\r\n?/g, '\n').split('\n');
     var i = 0, n = 0;
     while (i < lines.length && n < 400) {
