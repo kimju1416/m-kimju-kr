@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm14 · 2026-09-18';
+  var UI_VER = 'm15 · 2026-09-18';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -1892,22 +1892,32 @@
       return t.replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
     };
     var n = 0;
-    [].forEach.call(doc.body.querySelectorAll('table'), function (t) {
-      if (n > 12 || t.querySelector('table')) return;              // 표 안 표는 안쪽만 그린다(겹쳐 그리지 않게)
-      var rows = [].filter.call(t.querySelectorAll('tr'), function (tr) { return tr.querySelector('td, th'); });
+    /* 🔴 한글 주간학습안내는 **표 안에 표**가 들었다(제목 표를 머리칸에 넣는 식).
+       예전 판은 그런 표를 통째로 건너뛰어 화면이 비었다(형님 09-18 «원본 아무것도 안 떠»).
+       그래서 **맨 바깥 표만** 그리고, 그 표에 직접 딸린 줄만 쓴다. 안쪽 표는 칸 글자로 들어간다. */
+    var tops = [].filter.call(doc.body.querySelectorAll('table'), function (t) {
+      return !(t.parentNode && t.parentNode.closest && t.parentNode.closest('table'));
+    });
+    tops.forEach(function (t) {
+      if (n > 12) return;
+      var rows = [].filter.call(t.querySelectorAll('tr'), function (tr) {
+        return tr.closest('table') === t && tr.querySelector('td, th');
+      });
       if (!rows.length) return;
       var wrap = h('div', 'wk-scroll'), tb = h('table', 't wk-md'), body = h('tbody');
       rows.slice(0, 200).forEach(function (tr, k) {
         var row = h('tr');
         [].forEach.call(tr.querySelectorAll('td, th'), function (td) {
+          if (td.closest('tr') !== tr) return;                 // 안쪽 표의 칸은 건너뛴다(칸 글자로 이미 들어간다)
           var cell = h(k === 0 ? 'th' : 'td', null, cellText(td));
           var cs = +td.getAttribute('colspan'), rs = +td.getAttribute('rowspan');
           if (cs > 1) cell.setAttribute('colspan', Math.min(cs, 12));
           if (rs > 1) cell.setAttribute('rowspan', Math.min(rs, 30));
           row.appendChild(cell);
         });
-        body.appendChild(row);
+        if (row.children.length) body.appendChild(row);
       });
+      if (!body.children.length) return;
       tb.appendChild(body); wrap.appendChild(tb); box.appendChild(wrap); n++;
     });
     // 표 밖 글(알림 문구 등)
