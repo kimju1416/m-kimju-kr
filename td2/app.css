@@ -1329,3 +1329,19 @@ table.t.wk-md th, table.t.wk-md td { white-space: pre-line; word-break: keep-all
 .wk-img { display: block; width: 100%; height: auto; border: 1px solid var(--line); background: #fff; }
 .wk-pdf { display: block; width: 100%; height: 70vh; border: 1px solid var(--line); background: #fff; }
 .wk-open { margin-top: 10px; }
+
+/* ── 조례·종례 (m17) ─────────────────────── */
+.jj { padding: 9px calc(10px + var(--sar)) 10px calc(10px + var(--sal)); border-bottom: 1px solid var(--line); }
+.jj-hd { display: flex; align-items: center; gap: 8px; }
+.jj-hd b { font-size: .875rem; }
+.jj-tag { font-size: .6875rem; font-weight: 700; color: var(--acc); }
+.jj-tx { margin: 6px 0 0; font-size: .9375rem; line-height: 1.6; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+.jj-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.jj-acts .jj-share { background: #fee500; border-color: #fee500; color: #191919; }
+.jj .addrow { margin-top: 4px; }
+
+/* 학교 시트 일 — 온라인 교무실·업무 일정표 (m17 · PC 3.48) */
+.bar.k-sch { --kc: #6b7280; background: color-mix(in srgb, var(--kc) 16%, var(--bg)); }
+.bar.k-sch .bi { background: var(--kc); border-radius: 2px; }
+.bar.k-sch.imp { box-shadow: inset 2px 0 0 var(--acc); }
+.src.office, .src.yplan { background: var(--bg); color: var(--fg2); border-color: var(--line2); }

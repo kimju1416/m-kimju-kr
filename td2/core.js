@@ -407,7 +407,8 @@
   var TYPES = {
     'todo.add': 1, 'todo.done': 1, 'todo.edit': 1, 'todo.del': 1, 'memo.add': 1, 'memo.edit': 1, 'memo.del': 1,
     'event.add': 1, 'event.done': 1, 'dday.add': 1, 'ot.set': 1, 'prog.set': 1, 'prog.clear': 1,
-    'attend.set': 1, 'attend.clear': 1, 'attend.setMany': 1, 'attend.clearMany': 1, 'snote.add': 1, 'snote.act': 1
+    'attend.set': 1, 'attend.clear': 1, 'attend.setMany': 1, 'attend.clearMany': 1, 'snote.add': 1, 'snote.act': 1,
+    'jojong.set': 1   // 조례·종례(m17 · PC 3.48)
   };
   function op(type, p) {
     if (!TYPES[type]) throw new Error('모르는 입력 종류: ' + type);

@@ -66,12 +66,18 @@
   // 캘린더 탭 차례 — 일정 먼저(지금 그대로, 기본) / 할 일 먼저(09-15 형님 «지금 순서 마음에 드는데 옵션으로»)
   var CALORDERS = [{ id: 'ev', nm: '일정 먼저' }, { id: 'todo', nm: '할 일 먼저' }];
   var TABS = ['cal', 'today', 'memo', 'stu', 'wk'];
+  /* 오늘 탭 «맨 위 칸»(m17 · 형님 «오늘 보여주는 순서도 옵션에서 · 조종례가 제일 마지막»).
+     처음엔 ▲▼ 목록이었는데 형님 «설정이 너무 길어지고 보기 싫다» → **맨 위에 둘 칸 하나만** 고른다.
+     나머지는 기본 차례(시간표·할 일·급식·진도·초과근무·조종례) 그대로. 날짜줄·지금 칸은 늘 맨 위 */
+  var TODAY_PARTS = [{ id: 'tt', nm: '시간표' }, { id: 'todo', nm: '할 일' }, { id: 'meal', nm: '급식' },
+    { id: 'prog', nm: '진도' }, { id: 'ot', nm: '초과근무' }, { id: 'jj', nm: '조종례' }];
   // calWeekend: 달력에 토·일 칸 · calWeekNo: 달력 줄 왼쪽에 «1주·2주»
   // visits: 이 폰에서 자료를 받은 횟수(설치 권하기용) · installNo: 설치 권하기 띠를 닫았거나 설치함(설정의 설치 칸은 늘 보임)
   var DEF = {
     theme: 'base', accent: 'red', font: 'auto', size: 'm', start: 'last', tab: 'cal',
     navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false,
     calOrder: 'ev', showMeal: true, showOt: true,     // 오늘 탭 급식·초과근무 칸(끄면 칸째 숨김)
+    showJj: true, todayTop: 'tt',   // 조례·종례 칸 · 오늘 탭 맨 위 칸(m17)
     visits: 0, installNo: false,
     // 학생 탭 활동기록 생기부 칩(m7): 자유학기·일상생활 단추(많이 안 써서 기본 끔) · 과세특 «내 과목»(이 폰에만)과 고른 과목
     chipFree: false, chipDaily: false, subjs: [], subj: ''
@@ -115,6 +121,8 @@
       calOrder: find(CALORDERS, o.calOrder) ? o.calOrder : DEF.calOrder,
       showMeal: o.showMeal !== false,
       showOt: o.showOt !== false,
+      showJj: o.showJj !== false,
+      todayTop: find(TODAY_PARTS, o.todayTop) ? o.todayTop : DEF.todayTop,
       visits: (typeof o.visits === 'number' && isFinite(o.visits) && o.visits > 0) ? Math.min(999, Math.floor(o.visits)) : 0,
       installNo: o.installNo === true
     };
@@ -124,6 +132,7 @@
       theme: p.theme, accent: p.accent, font: p.font, size: p.size, start: p.start, tab: p.tab,
       navMode: p.navMode, barColor: p.barColor, calSize: p.calSize, calWeekend: p.calWeekend, calWeekNo: p.calWeekNo,
       calOrder: p.calOrder, showMeal: p.showMeal, showOt: p.showOt,
+      showJj: p.showJj, todayTop: p.todayTop,
       visits: p.visits, installNo: p.installNo,
       chipFree: p.chipFree, chipDaily: p.chipDaily, subjs: p.subjs.slice(), subj: p.subj
     };
@@ -209,7 +218,7 @@
     NAVS: NAVS,
     BARS: BARS,
     CALSIZES: CALSIZES,
-    CALORDERS: CALORDERS,
+    CALORDERS: CALORDERS, TODAY_PARTS: TODAY_PARTS,
     get: function () { return copy(cur); },
     set: function (patch) {
       var n = copy(cur);

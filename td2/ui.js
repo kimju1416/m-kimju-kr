@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm16 · 2026-09-19';
+  var UI_VER = 'm17 · 2026-09-20';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -956,7 +956,19 @@
     }).map(function (w) { return w.e; });
   }
 
+  /* 학교 시트 일(PC 3.48 · caps.schoolCal) — 온라인 교무실(office)·업무 일정표(yplan). PC 달력과 같은 갈래·부서 색(kc)
+     · 읽기만. 색은 CSSOM으로 넣는다(CSP style-src에 안 걸림) · 중요(imp)는 빨간 테 */
+  var SCH_KO = { office: '교무실', yplan: '업무' };
+  function isSch(e) { return e && (e.src === 'office' || e.src === 'yplan'); }
+  function schTitle(e) { return (e.tag ? '[' + e.tag + '] ' : '') + (e.t || ''); }
   function barEl(e, xl) {
+    if (isSch(e)) {
+      var sb = h('span', 'bar k-sch' + (e.imp ? ' imp' : ''));
+      if (/^#[0-9a-f]{3,8}$/i.test(e.kc || '')) sb.style.setProperty('--kc', e.kc);
+      sb.appendChild(h('span', 'bi'));
+      sb.appendChild(h('span', 'bt', schTitle(e)));
+      return sb;
+    }
     var k = e.red ? 'red' : (e.src === 'mine' || e.src === 'sched' ? e.src : 'gcal');
     var b = h('span', 'bar k-' + k + (e.done ? ' done' : '') + (e.mark === 'wait' ? ' wait' : ''));
     if (e.src === 'mine' && e.done) b.appendChild(icon('check', 'bi', '3'));
@@ -1001,7 +1013,7 @@
     if (scroll) scrollToEl($('cal-day'));
   }
 
-  var SRC_KO = { mine: '내', sched: '학사', gcal: '구글' };
+  var SRC_KO = { mine: '내', sched: '학사', gcal: '구글', office: '교무실', yplan: '업무' };
   function srcChip(src) {
     var k = SRC_KO[src] ? src : 'gcal';
     return h('span', 'src ' + k, SRC_KO[k]);
@@ -1025,7 +1037,8 @@
   }
   function evTitleCell(e) {
     var c = td('');
-    c.appendChild(h('span', 'ttl' + (e.red ? ' hot' : ''), e.t || '(제목 없음)'));
+    c.appendChild(h('span', 'ttl' + (e.red || e.imp ? ' hot' : ''), isSch(e) ? schTitle(e) : (e.t || '(제목 없음)')));
+    if (isSch(e) && e.who) c.appendChild(h('span', 'mini', e.who));
     var mini = eventMini(e);
     if (mini || e.mark) {
       var mn = h('span', 'mini', mini);
@@ -1325,6 +1338,17 @@
     if (pf.showMeal !== false) renderMeal(d); else clear($('td-meal'));
     renderProg(ds, d);
     if (pf.showOt !== false) renderOt(); else clear($('td-ot'));
+    if (pf.showJj !== false) renderJj(ds); else clear($('td-jj'));
+    todayOrder(pf.todayTop);
+  }
+  /* 오늘 탭 칸 차례(m17) — 고른 «맨 위 칸» 하나를 앞으로, 나머지는 기본 차례. 날짜줄·지금 칸은 맨 위 그대로 */
+  var TD_BOX = { tt: 'td-tt', todo: 'td-todo', meal: 'td-meal', prog: 'td-prog', ot: 'td-ot', jj: 'td-jj' };
+  var TD_DEF = ['tt', 'todo', 'meal', 'prog', 'ot', 'jj'];
+  function todayOrder(top) {
+    var sec = $('v-today');
+    if (!sec) return;
+    var list = TD_BOX[top] ? [top].concat(TD_DEF.filter(function (k) { return k !== top; })) : TD_DEF;
+    list.forEach(function (k) { var el = TD_BOX[k] && $(TD_BOX[k]); if (el && el.parentNode === sec) sec.appendChild(el); });
   }
 
   /* [오늘] 탭 «오늘 할 일» — 시간표 아래(09-15 형님이 자리 정함). 첫 화면인 캘린더에선 할 일이 두 화면 아래라 급한 일이 안 보였다.
@@ -1611,6 +1635,107 @@
     });
     if (o.hasDays && !o.rows.length) box.appendChild(empty('이번 달 기록이 없습니다'));
     box.appendChild(addRow('초과근무 적기', function () { openOt(today()); }));
+  }
+
+  /* ── 조례·종례 (m17 · PC 3.48) ──
+     형님 «PC에서 적은 조종례를 폰에서 보고 조종례 · 폰에서도 적기 · 복사·카톡 공유(반톡)».
+     PC가 caps.jojong을 실을 때만 보인다(옛 PC면 칸째 없음). 폰에서 고친 것은 jojong.set으로 올리고 먼저 보여 준다(PC 반영 대기).
+     [공유]는 폰의 공유 창(navigator.share) — 카톡·문자·밴드 어디든. 공유 창이 없는 브라우저는 복사로 물러선다 */
+  var JJ_NM = { am: '조례', pm: '종례' };
+  function dispJj(ds) {
+    var v = V();
+    var src = (v && v.jojong && v.jojong[ds]) || {};
+    var out = {};
+    ['am', 'pm'].forEach(function (w) {
+      var x = src[w] || {};
+      out[w] = { raw: String(x.raw || ''), text: String(x.text || ''), mark: '' };
+    });
+    pend().forEach(function (o) {
+      if (o.type !== 'jojong.set') return;
+      var p = o.p || {};
+      if (p.date !== ds || !out[p.which]) return;
+      if (isActive(o)) {
+        if (p.raw !== undefined) out[p.which].raw = String(p.raw || '');
+        if (p.text !== undefined) out[p.which].text = String(p.text || '');
+        out[p.which].mark = 'wait';
+      } else if (o.status === 'applied') { if (out[p.which].mark !== 'wait') out[p.which].mark = 'ok'; }
+      else if (isRejected(o)) { if (out[p.which].mark !== 'wait') out[p.which].mark = 'rej'; }
+    });
+    return out;
+  }
+  function jjCopy(t) {
+    function done() { toast('복사했습니다 — 카톡에 붙여 넣으세요'); }
+    function old() {
+      var a = document.createElement('textarea');
+      a.value = t; a.setAttribute('readonly', ''); a.style.position = 'fixed'; a.style.top = '-1000px';
+      document.body.appendChild(a); a.select();
+      var ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(a);
+      if (ok) done(); else toast('복사하지 못했습니다 — 글을 길게 눌러 복사해 주세요');
+    }
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(done, old); return; } } catch (e) { /* 아래로 */ }
+    old();
+  }
+  function jjShare(t, title) {
+    if (navigator.share) {
+      navigator.share({ text: t }).catch(function (e) { if (e && e.name !== 'AbortError') jjCopy(t); });
+      return;
+    }
+    jjCopy(t);
+  }
+  function renderJj(ds) {
+    var box = $('td-jj');
+    if (!box) return;                                   // 옛 index.html
+    clear(box);
+    var v = V();
+    if (!v || !v.caps || !v.caps.jojong) return;        // 옛 PC — 조종례를 모른다
+    var jj = dispJj(ds);
+    box.appendChild(sec('조례 · 종례', md(ds)));
+    ['am', 'pm'].forEach(function (w) {
+      var x = jj[w];
+      var say = (x.text.trim() || x.raw.trim());
+      var row = h('div', 'jj');
+      var hd = h('div', 'jj-hd');
+      hd.appendChild(h('b', '', JJ_NM[w]));
+      if (x.text.trim()) hd.appendChild(h('span', 'jj-tag', '멘트'));
+      if (x.mark) hd.appendChild(markEl(x.mark, true));
+      row.appendChild(hd);
+      if (say) {
+        row.appendChild(h('p', 'jj-tx', say));
+        var acts = h('div', 'jj-acts');
+        acts.appendChild(withId(btn('chip', '복사', function () { jjCopy(say); }), 'jj-copy-' + w));
+        acts.appendChild(withId(btn('chip jj-share', '공유 (카톡)', function () { jjShare(say, JJ_NM[w]); }), 'jj-share-' + w));
+        acts.appendChild(withId(btn('chip', '고치기', function () { openJj(ds, w); }), 'jj-edit-' + w));
+        row.appendChild(acts);
+      } else {
+        row.appendChild(withId(addRow(JJ_NM[w] + ' 적기', function () { openJj(ds, w); }), 'jj-add-' + w));
+      }
+      box.appendChild(row);
+    });
+  }
+  function openJj(ds, w) {
+    fsOpen(md(ds) + ' ' + JJ_NM[w], function (body) {
+      var cur = dispJj(ds)[w];
+      var ed = h('div', 'ed');
+      ed.appendChild(fLabel('전달할 것 (짧게)', 'fs-jjraw'));
+      var inR = fArea('fs-jjraw', cur.raw, 2000, '예) 체육복 · 3시 상담 · 우유 가져오기');
+      ed.appendChild(inR);
+      ed.appendChild(fLabel('읽어 줄 멘트' + (cur.text.trim() ? '' : ' (PC의 [AI로 멘트 만들기]로 만든 것 · 비워도 됩니다)'), 'fs-jjtext'));
+      var inT = fArea('fs-jjtext', cur.text, 3000, '비우면 위에 적은 것을 그대로 보냅니다');
+      inT.rows = 6;
+      ed.appendChild(inT);
+      ed.appendChild(errP('fs-err'));
+      ed.appendChild(withId(btn('pbtn in', '저장', function () {
+        var raw = inR.value.replace(/\r/g, '').trim(), text = inT.value.replace(/\r/g, '').trim();
+        if (raw === cur.raw.trim() && text === cur.text.trim()) { closeOverlay(); return; }
+        M.op('jojong.set', { date: ds, which: w, raw: raw, text: text });
+        closeOverlay();
+        renderToday();
+        toast(md(ds) + ' ' + JJ_NM[w] + (raw || text ? '을 저장했습니다' : '을 비웠습니다') + ' · PC 반영 대기');
+      }), 'fs-save'));
+      body.appendChild(ed);
+      setTimeout(function () { try { inR.focus(); } catch (e) { /* 넘어간다 */ } }, 60);
+    });
   }
 
   // ── 3) 메모 ─────────────────────────────
@@ -3108,6 +3233,16 @@
     lb('초과근무');
     box.appendChild(onOff('오늘 탭 초과근무', p.showOt !== false, 'showOt'));
     foot('초과근무를 끄면 폰에서 초과근무를 적는 칸도 숨습니다. PC에서는 그대로 적을 수 있어요.');
+    lb('조례 · 종례');
+    box.appendChild(onOff('오늘 탭 조례 종례', p.showJj !== false, 'showJj'));
+    lb('맨 위 칸');
+    var tops = (PR && PR.TODAY_PARTS) || [];
+    if (tops.length) {
+      var tg = segCols(radioGroup('segr', '오늘 탭 맨 위 칸', tops, p.todayTop || 'tt', function (id) { pickPref({ todayTop: id }); }, textBtn), 3);
+      Array.prototype.forEach.call(tg.querySelectorAll('button'), function (b, i) { b.id = 'td-top-' + tops[i].id; if (i < 3) b.style.borderBottom = '1px solid var(--fg)'; if (i === 2) b.style.borderRight = '0'; });
+      box.appendChild(tg);
+    }
+    foot('고른 칸이 오늘 탭 맨 위(날짜 아래)에 옵니다. 나머지는 시간표 · 할 일 · 급식 · 진도 · 초과근무 · 조종례 차례입니다.');
 
     // ④ 학생 탭 — 폰에서 바꿀 것은 없다. 학생 탭이 비어 있을 때 어디서 켜는지 헤매지 않게 한 줄
     box.appendChild(sec('학생 탭'));
