@@ -161,6 +161,7 @@
   /* 다른 계정으로 바뀌었다 — 앞 계정의 보기 사본은 버리고(남의 학교·할 일이 새 계정 화면에 뜨지 않게),
      앞 계정에서 적은 입력은 그 계정 몫으로 묶어 둔다(올리지도 지우지도 않는다 — 그 계정으로 다시 로그인하면 올라간다) */
   function acctChanged(prev) {
+    lsSet('vid', null);
     lsSet('view', null);
     state.view = null;
     state.viewAt = 0;
@@ -179,15 +180,27 @@
 
   /* ── 보기 파일 ── */
   function stripStudents(v) { var c = clone(v); if (c) { delete c.attend; delete c.talk; } return c; }
-  function loadView() {
-    if (loadingView) return loadingView;
+  /* 받기만 한다(화면에 안 넣음) — 계정 확인과 **동시에** 돌리려고 나눴다(m16).
+     PC는 보기 파일을 같은 파일에 덮어쓴다(gsync mobileView → D.update) → 지난번 파일 번호로 내용을 곧바로 받고,
+     목록은 **같이** 물어 번호가 맞는지만 본다. 맞으면 요청 둘이 한 번에 끝나고(예전엔 목록 → 내용 차례로 둘),
+     틀리면(두 PC가 새로 만듦·계정 바뀜) 목록의 것으로 다시 받는다 — 옛 파일을 믿고 끝내는 일은 없다 */
+  function fetchView() {
     var q = new URLSearchParams({ spaces: 'appDataFolder', q: "name='" + VIEW + "'", orderBy: 'modifiedTime desc', pageSize: '5', fields: 'files(id,name,modifiedTime)' });
-    loadingView = api('GET', EP.api + '/drive/v3/files?' + q.toString()).then(function (j) {
+    var media = function (id) { return api('GET', EP.api + '/drive/v3/files/' + encodeURIComponent(id) + '?alt=media', null, null, true); };
+    var vid = String(lsGet('vid', '') || '');
+    var direct = vid ? media(vid).then(null, function () { return null; }) : null;
+    return api('GET', EP.api + '/drive/v3/files?' + q.toString()).then(function (j) {
       var f = j && Array.isArray(j.files) ? j.files.filter(function (x) { return x.name === VIEW; })[0] : null;
       if (!j || !Array.isArray(j.files)) throw gErr('net', '구글 드라이브가 아닌 응답이 왔습니다 — 와이파이가 막고 있을 수 있어요');
-      if (!f) throw gErr('no-view', 'PC가 올린 폰 자료가 없습니다');
-      return api('GET', EP.api + '/drive/v3/files/' + encodeURIComponent(f.id) + '?alt=media', null, null, true);
-    }).then(function (text) {
+      if (!f) { lsSet('vid', null); throw gErr('no-view', 'PC가 올린 폰 자료가 없습니다'); }
+      if (f.id !== vid) lsSet('vid', f.id);
+      if (direct && f.id === vid) return direct.then(function (t) { return t == null ? media(f.id) : t; });
+      return media(f.id);
+    });
+  }
+  function loadView(pre) {
+    if (loadingView) return loadingView;
+    loadingView = (pre || fetchView()).then(function (text) {
       var v;
       try { v = JSON.parse(text); } catch (e) { throw gErr('net', '폰 자료를 끝까지 받지 못했습니다'); }
       if (!v || v.app !== 'TeacherDesk2' || v.kind !== 'mobile-view') throw gErr('no-view', 'PC가 올린 폰 자료가 없습니다');
@@ -357,10 +370,17 @@
     }
     /* 🔴 저장해 둔 화면은 **계정을 확인한 열쇠이고 같은 계정일 때만** 먼저 띄운다.
        방금 로그인에서 돌아온 열쇠는 아직 누구 것인지 모른다 — 다른 계정이면 앞 계정의 학교·할 일이 잠깐 보였다 */
-    if (cached && cached.kind === 'mobile-view' && sameAcct(tokEmail(), prevEmail)) set({ phase: 'ready', view: cached, viewAt: 0, busy: true });
-    else set({ busy: true });
-    ensureEmail().then(function () {
-      return loadView();
+    var showCached = function () { if (!state.view && cached && cached.kind === 'mobile-view' && sameAcct(tokEmail(), prevEmail)) set({ phase: 'ready', view: cached, viewAt: 0, busy: true }); };
+    showCached();
+    if (!state.view) set({ busy: true });
+    /* m16 — 계정 확인과 자료 받기를 **동시에**. 자료는 이 열쇠의 드라이브 것이라 누구 계정이든 그 계정 것이 맞다.
+       다만 화면에 넣는 것(저장해 둔 사본도, 새 자료도)은 계정을 확인한 **뒤에만** — 앞 계정 화면이 새 계정에 비치지 않게 */
+    var pre = fetchView();
+    pre.then(null, function () { });
+    var who = ensureEmail();
+    who.then(showCached, function () { });
+    who.then(function () {
+      return loadView(pre);
     }).then(function () { set({ busy: false }); return flush(); }).then(schedule, failTo);
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible' && state.phase === 'ready' && Date.now() - state.viewAt > 60000) refresh();
@@ -372,7 +392,7 @@
     goGoogle(state.errCode === 'no-drive' ? 'consent select_account' : 'select_account', '');
   }
   function logout() {
-    ['tok', 'email', 'view', 'pending', 'silentAt', 'rd'].forEach(function (k) { lsSet(k, null); });
+    ['tok', 'email', 'view', 'vid', 'pending', 'silentAt', 'rd'].forEach(function (k) { lsSet(k, null); });
     dropFiles();
     clearTimeout(pollTimer);
     set({ phase: 'login', email: '', view: null, viewAt: 0, pending: [], busy: false, err: '', errCode: '', needLogin: false });
@@ -408,5 +428,9 @@
   }
 
   // canLeave — 화면(ui.js)이 채운다: 글을 쓰는 중이면 false(silent가 구글로 떠나지 않는다)
+  /* m16 — 화면 파일을 폰에 넣어 두는 일꾼(sw.js). 배포 주소(https)에서만 — 검사(127.0.0.1)는 TD2M_TEST.sw일 때만 */
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || (window.TD2M_TEST && window.TD2M_TEST.sw))) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function () { }); });
+  }
   window.TD2M = { state: state, on: on, start: start, login: login, logout: logout, refresh: refresh, op: op, openExternal: openExternal, held: held, file: fileUrl, canLeave: null };
 })();

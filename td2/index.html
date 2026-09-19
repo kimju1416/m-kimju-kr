@@ -26,13 +26,16 @@
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <!-- /OG -->
+<!-- 구글에 미리 길을 터 둔다 — 로그인에서 돌아오자마자 드라이브에 묻는 시간이 준다(m16) -->
+<link rel="preconnect" href="https://www.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://openidconnect.googleapis.com" crossorigin>
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <!-- ?v= — 판을 올릴 때 함께 바꾼다. 안 바꾸면 폰이 옛 파일을 붙잡아 새 화면과 옛 스크립트가 섞인다 -->
-<link rel="stylesheet" href="./app.css?v=m15">
+<link rel="stylesheet" href="./app.css?v=m16">
 <!-- 폰마다 저장한 화면 설정을 첫 그림 전에 붙인다(깜빡임 방지) -->
-<script src="./prefs.js?v=m15"></script>
+<script src="./prefs.js?v=m16"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -256,8 +259,8 @@
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </div>
 
-<script src="./core.js?v=m15"></script>
-<script src="./chips.js?v=m15"></script>
-<script src="./ui.js?v=m15"></script>
+<script src="./core.js?v=m16"></script>
+<script src="./chips.js?v=m16"></script>
+<script src="./ui.js?v=m16"></script>
 </body>
 </html>
