@@ -1345,3 +1345,4 @@ table.t.wk-md th, table.t.wk-md td { white-space: pre-line; word-break: keep-all
 .bar.k-sch .bi { background: var(--kc); border-radius: 2px; }
 .bar.k-sch.imp { box-shadow: inset 2px 0 0 var(--acc); }
 .src.office, .src.yplan { background: var(--bg); color: var(--fg2); border-color: var(--line2); }
+.ed .jj-more{margin:10px 0 2px;align-self:flex-start}

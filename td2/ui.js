@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm17 · 2026-09-20';
+  var UI_VER = 'm18 · 2026-09-20';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -1717,13 +1717,27 @@
     fsOpen(md(ds) + ' ' + JJ_NM[w], function (body) {
       var cur = dispJj(ds)[w];
       var ed = h('div', 'ed');
-      ed.appendChild(fLabel('전달할 것 (짧게)', 'fs-jjraw'));
+      /* 칸은 하나만 보인다(형님 «폰에서는 1개만») — 멘트가 있으면 멘트 칸만, 없으면 적는 칸만.
+         나머지 칸은 아래 «… 보기 ▾»로 펼친다. 두 칸 모두 DOM에 있어 저장은 늘 둘 다 */
+      var hasT = !!cur.text.trim();
+      var wrR = h('div', 'jj-fw'), wrT = h('div', 'jj-fw');
+      wrR.appendChild(fLabel('전달할 것 (짧게)', 'fs-jjraw'));
       var inR = fArea('fs-jjraw', cur.raw, 2000, '예) 체육복 · 3시 상담 · 우유 가져오기');
-      ed.appendChild(inR);
-      ed.appendChild(fLabel('읽어 줄 멘트' + (cur.text.trim() ? '' : ' (PC의 [AI로 멘트 만들기]로 만든 것 · 비워도 됩니다)'), 'fs-jjtext'));
+      wrR.appendChild(inR);
+      wrT.appendChild(fLabel('읽어 줄 멘트', 'fs-jjtext'));
       var inT = fArea('fs-jjtext', cur.text, 3000, '비우면 위에 적은 것을 그대로 보냅니다');
       inT.rows = 6;
-      ed.appendChild(inT);
+      wrT.appendChild(inT);
+      var more = hasT ? wrR : wrT;
+      more.style.display = 'none';
+      var tg = withId(btn('chip jj-more', hasT ? '적은 것 보기 ▾' : 'AI 멘트 칸 보기 ▾', function () {
+        var open = more.style.display === 'none';
+        more.style.display = open ? '' : 'none';
+        tg.textContent = (hasT ? '적은 것 ' : 'AI 멘트 칸 ') + (open ? '접기 ▴' : '보기 ▾');
+      }), 'fs-jjmore');
+      ed.appendChild(hasT ? wrT : wrR);
+      ed.appendChild(tg);
+      ed.appendChild(more);
       ed.appendChild(errP('fs-err'));
       ed.appendChild(withId(btn('pbtn in', '저장', function () {
         var raw = inR.value.replace(/\r/g, '').trim(), text = inT.value.replace(/\r/g, '').trim();
@@ -1734,7 +1748,7 @@
         toast(md(ds) + ' ' + JJ_NM[w] + (raw || text ? '을 저장했습니다' : '을 비웠습니다') + ' · PC 반영 대기');
       }), 'fs-save'));
       body.appendChild(ed);
-      setTimeout(function () { try { inR.focus(); } catch (e) { /* 넘어간다 */ } }, 60);
+      setTimeout(function () { try { (hasT ? inT : inR).focus(); } catch (e) { /* 넘어간다 */ } }, 60);
     });
   }
 
