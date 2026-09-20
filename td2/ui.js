@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm18 · 2026-09-20';
+  var UI_VER = 'm19 · 2026-09-20';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -36,6 +36,75 @@
     return e;
   }
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+  /* ── 쪽지의 꾸민 글 (m19 · PC v3.51) ─────────────────────────────
+     PC에서 꾸민 글(h)을 **보여주기만** 한다. 폰에는 꾸미는 기능을 두지 않는다(형님 09-20).
+     체크 네모만 눌러서 켜고 끈다.
+     🔴 PC가 이미 걸렀지만 **폰도 스스로 거른다** — 드라이브 파일은 남이 바꿀 수도 있다.
+        허용 목록은 PC(memoClean)와 같게 둔다. 여기 없는 태그는 껍데기만 벗기고 글자는 남긴다. */
+  var MK_TAGS = { B: 1, STRONG: 1, I: 1, EM: 1, U: 1, S: 1, STRIKE: 1, SPAN: 1, DIV: 1, P: 1, BR: 1, UL: 1, OL: 1, LI: 1 };
+  var MK_CSS = {
+    'color': /^(#[0-9a-f]{3,8}|rgba?\([\d.,\s%]+\))$/i,
+    'font-size': /^[\d.]+(em|px|%)$/i,
+    'font-weight': /^(bold|normal|[1-9]00)$/i,
+    'font-style': /^(italic|normal)$/i,
+    'text-decoration': /^(underline|line-through|none|underline line-through)$/i,
+    'text-decoration-line': /^(underline|line-through|none|underline line-through)$/i,
+    'text-align': /^(left|center|right|justify)$/i
+  };
+  /* 🔴 **노드를 돌려준다**(문자열이 아니라).
+     폰 페이지의 보안 정책(style-src 'self')은 글 안에 박힌 style="color:…"를 막는다 —
+     문자열로 innerHTML에 넣으면 색이 통째로 죽는다(실측: 빨강이 검정으로 나왔다).
+     폰이 원래 쓰던 방법 그대로 **JS가 직접 칠한다**(el.style.setProperty는 정책과 무관). */
+  function mkNode(html) {
+    var t = document.createElement('template');
+    t.innerHTML = String(html == null ? '' : html);
+    (function walk(root) {
+      Array.prototype.slice.call(root.children).forEach(function (el) {
+        walk(el);
+        if (!MK_TAGS[el.tagName]) {
+          var pa = el.parentNode;
+          while (el.firstChild) pa.insertBefore(el.firstChild, el);
+          pa.removeChild(el);
+          return;
+        }
+        Array.prototype.slice.call(el.attributes).forEach(function (a) {
+          var nm = a.name.toLowerCase();
+          if (nm === 'data-ck' && el.tagName === 'LI') return;
+          if (nm === 'class' && /^(mk-ck|mk-sq)$/.test(a.value)) return;
+          if (nm !== 'style') { el.removeAttribute(a.name); return; }
+          var keep = String(a.value).split(';').map(function (x) { return x.trim(); })
+            .filter(function (one) {
+              var i = one.indexOf(':');
+              if (i < 0) return false;
+              var k = one.slice(0, i).trim().toLowerCase(), v = one.slice(i + 1).trim();
+              return MK_CSS[k] && MK_CSS[k].test(v);
+            });
+          el.removeAttribute('style');
+          keep.forEach(function (one) {
+            var i = one.indexOf(':');
+            try { el.style.setProperty(one.slice(0, i).trim(), one.slice(i + 1).trim()); } catch (e) { /* 못 칠해도 글은 남는다 */ }
+          });
+        });
+      });
+    })(t.content);
+    return t.content;          // 노드 그대로 — 문자열로 되돌리면 칠한 색이 다시 글자가 된다
+  }
+  /* 누른 자리가 **체크 네모**인가 — 네모는 CSS(::before)로 그리므로 누를 요소가 없다.
+     li의 왼쪽 들여쓴 만큼 안쪽이면 네모로 본다. 🔴 손가락이라 넉넉히 잡는다(app.css와 같은 값). */
+  var MK_CK_W = 40;
+  function mkCkHit(ev) {
+    var el = ev.target;
+    while (el && el.nodeType === 1 && el.tagName !== 'LI') el = el.parentNode;
+    if (!el || el.nodeType !== 1) return null;
+    var ul = el.parentNode;
+    if (!ul || ul.tagName !== 'UL' || ul.className.indexOf('mk-ck') < 0) return null;
+    var r = el.getBoundingClientRect();
+    var x = (ev.clientX != null) ? ev.clientX : ((ev.changedTouches && ev.changedTouches[0]) ? ev.changedTouches[0].clientX : -1);
+    if (x < 0 || (x - r.left) > MK_CK_W) return null;
+    var lis = Array.prototype.slice.call(ul.querySelectorAll(':scope > li'));
+    return { li: el, i: lis.indexOf(el), txt: String(el.textContent || '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '') };
+  }
   function qsa(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
   function btn(cls, text, fn) {
     var b = h('button', cls, text);
@@ -340,7 +409,8 @@
     var v = V();
     if (!v) return [];
     var list = arr(v.memos).map(function (m) {
-      return { fp: m.fp, t: String(m.t || ''), mid: m.mid, c: m.c || '', card: String(m.card || '메모'), mark: '', del: false, isNew: false };
+      /* m19 — PC에서 꾸민 글(h). 폰은 **보여주기와 체크 누르기**만 한다(꾸미는 기능은 없다) */
+      return { fp: m.fp, t: String(m.t || ''), h: String(m.h || ''), mid: m.mid, c: m.c || '', card: String(m.card || '메모'), mark: '', del: false, isNew: false };
     });
     var byFp = {};
     list.forEach(function (x) { if (x.fp && !byFp[x.fp]) byFp[x.fp] = x; });
@@ -360,6 +430,20 @@
           var want = meta ? meta.t : p.t;
           for (i = 0; i < list.length; i++) {
             if (!list[i].mark && list[i].t === want) { list[i].mark = 'ok'; break; }
+          }
+        } else if (isRejected(o) && x && !x.mark) x.mark = 'rej';
+      } else if (o.type === 'memo.check') {
+        /* 🔴 아직 PC에 안 닿은 체크를 **화면에 그대로 얹는다**(m19).
+           안 얹으면 누른 직후 화면을 다시 그릴 때 체크가 도로 풀려 «눌러도 안 된다»가 된다.
+           올라간 뒤에는 PC가 보낸 h에 이미 들어 있으므로 얹지 않는다. */
+        if (isActive(o) && x && x.h) {
+          var t2 = document.createElement('template');
+          t2.innerHTML = x.h;
+          var li2 = t2.content.querySelectorAll('ul.mk-ck > li')[+p.i];
+          if (li2) {
+            if (p.on) li2.setAttribute('data-ck', '1'); else li2.removeAttribute('data-ck');
+            x.h = t2.innerHTML;
+            x.mark = 'wait';
           }
         } else if (isRejected(o) && x && !x.mark) x.mark = 'rej';
       } else if (o.type === 'memo.del') {
@@ -1774,10 +1858,19 @@
       box.appendChild(sec(g.card, g.items.length + '건'));
       var wrap = h('div');
       g.items.forEach(function (m) {
-        var r = btn('memo' + (m.del ? ' del' : ''), null, function () { openMemoEdit(m); });
+        /* m19 — 체크 네모를 누르면 **고치기를 열지 않고 체크만** 켜고 끈다.
+           그 밖을 누르면 지금까지처럼 고치기가 열린다. */
+        var r = btn('memo' + (m.del ? ' del' : ''), null, function (ev) {
+          var hit = m.h ? mkCkHit(ev) : null;
+          if (hit && hit.i >= 0) { ev.preventDefault(); toggleMemoCheck(m, hit); return; }
+          openMemoEdit(m);
+        });
         var col = catColor(m.c);
         if (col) r.style.borderLeftColor = col;
-        r.appendChild(h('span', 'tx', m.t));
+        var tx = h('span', 'tx');
+        if (m.h) { tx.className = 'tx rich'; tx.appendChild(mkNode(m.h)); }
+        else tx.textContent = m.t;
+        r.appendChild(tx);
         if (m.mark) {
           var mt = h('span', 'mt');
           mt.appendChild(markEl(m.mark));
@@ -1788,6 +1881,17 @@
       });
       box.appendChild(wrap);
     });
+  }
+
+  /* 체크 켜고 끄기 (m19) — 누르는 즉시 화면에 그리고, PC 반영은 기다린다.
+     🔴 글자(txt)를 함께 보낸다 — 그 사이 PC에서 줄이 바뀌었으면 PC가 거절한다(엉뚱한 줄 방지). */
+  function toggleMemoCheck(m, hit) {
+    if (m.isNew || !m.fp) { toast('PC에 반영된 뒤에 체크할 수 있습니다'); return; }
+    if (m.del) { toast('지우기를 기다리고 있습니다'); return; }
+    var on = hit.li.getAttribute('data-ck') !== '1';
+    if (on) hit.li.setAttribute('data-ck', '1'); else hit.li.removeAttribute('data-ck');
+    M.op('memo.check', { fp: m.fp, i: hit.i, on: on, txt: hit.txt });
+    toast(on ? '체크했습니다 · PC 반영 대기' : '체크를 풀었습니다 · PC 반영 대기');
   }
 
   function addMemo() {
@@ -2925,6 +3029,10 @@
     if (m.isNew || !m.fp) { toast('PC에 반영된 뒤에 고칠 수 있습니다'); return; }
     if (m.del) { toast('지우기를 기다리고 있습니다'); return; }
     if (m.editing) { toast('고친 내용이 PC에 반영된 뒤에 다시 고치거나 지울 수 있습니다'); return; }
+    /* 🔴 폰에서 고치면 **평문으로 바뀐다**(폰에는 꾸미는 기능이 없다 — 형님 09-20).
+       체크 목록이 든 쪽지를 모르고 고쳐 체크가 글자로 변하는 일만 막는다. */
+    if (m.h && m.h.indexOf('mk-ck') >= 0
+      && !window.confirm('이 쪽지에는 체크 목록이 있습니다.\n폰에서 고치면 체크가 글자로 바뀝니다 — PC에서 다시 체크로 만들 수 있어요.\n\n그래도 고칠까요?')) return;
     fsOpen('메모 고치기', function (body) {
       body.appendChild(h('p', 'fs-now', m.card + ' 카드'));
       var ed = h('div', 'ed');
