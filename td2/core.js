@@ -341,9 +341,23 @@
     if (typeof fn === 'function') listeners.push(fn);
     return function () { listeners = listeners.filter(function (x) { return x !== fn; }); };
   }
+  /* 🔴 저장소를 지켜 달라고 브라우저에 부탁한다 (m21 · 09-21 형님 제보로 넣음)
+     안드로이드 크롬은 부탁하지 않은 사이트의 자료를 **오리진 통째로** 버린다(기기 공간이 모자라거나
+     한동안 안 열었을 때). 그러면 로그인 열쇠(td2m:tok)도 화면 설정(td2m:ui)도 **함께** 사라져
+     «며칠 만에 열었더니 로그인이 풀리고 스킨이 기본으로» 가 된다 — 실제로 그 일을 겪으셨다.
+     홈 화면에 설치한 앱이면 크롬이 대개 묻지 않고 바로 들어준다. 실패해도 하던 대로 돈다. */
+  function keepStorage() {
+    try {
+      var st = navigator.storage;
+      if (!st || !st.persist || !st.persisted) return;
+      st.persisted().then(function (already) { if (!already) return st.persist(); }).catch(function () { });
+    } catch (e) { /* 옛 브라우저 — 그냥 넘어간다 */ }
+  }
+
   function start() {
     if (started) return;
     started = true;
+    keepStorage();
     var prevEmail = lsGet('email', '');
     // 계정 표시가 없는 옛 입력(m4까지 적은 것)은 그때 로그인해 있던 계정 것이다 — 계정이 바뀌어도 섞이지 않게 먼저 붙인다
     var stamped = false;
