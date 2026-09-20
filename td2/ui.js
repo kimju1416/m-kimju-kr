@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm19 · 2026-09-20';
+  var UI_VER = 'm20 · 2026-09-20';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -1774,7 +1774,7 @@
     var v = V();
     if (!v || !v.caps || !v.caps.jojong) return;        // 옛 PC — 조종례를 모른다
     var jj = dispJj(ds);
-    box.appendChild(sec('조례 · 종례', md(ds)));
+    box.appendChild(sec('조·종례', md(ds)));
     ['am', 'pm'].forEach(function (w) {
       var x = jj[w];
       var say = (x.text.trim() || x.raw.trim());
@@ -3355,7 +3355,7 @@
     lb('초과근무');
     box.appendChild(onOff('오늘 탭 초과근무', p.showOt !== false, 'showOt'));
     foot('초과근무를 끄면 폰에서 초과근무를 적는 칸도 숨습니다. PC에서는 그대로 적을 수 있어요.');
-    lb('조례 · 종례');
+    lb('조·종례');
     box.appendChild(onOff('오늘 탭 조례 종례', p.showJj !== false, 'showJj'));
     lb('맨 위 칸');
     var tops = (PR && PR.TODAY_PARTS) || [];
@@ -3364,7 +3364,7 @@
       Array.prototype.forEach.call(tg.querySelectorAll('button'), function (b, i) { b.id = 'td-top-' + tops[i].id; if (i < 3) b.style.borderBottom = '1px solid var(--fg)'; if (i === 2) b.style.borderRight = '0'; });
       box.appendChild(tg);
     }
-    foot('고른 칸이 오늘 탭 맨 위(날짜 아래)에 옵니다. 나머지는 시간표 · 할 일 · 급식 · 진도 · 초과근무 · 조종례 차례입니다.');
+    foot('고른 칸이 오늘 탭 맨 위(날짜 아래)에 옵니다. 나머지는 시간표 · 할 일 · 급식 · 진도 · 초과근무 · 조·종례 차례입니다.');
 
     // ④ 학생 탭 — 폰에서 바꿀 것은 없다. 학생 탭이 비어 있을 때 어디서 켜는지 헤매지 않게 한 줄
     box.appendChild(sec('학생 탭'));
