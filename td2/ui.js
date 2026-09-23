@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm21 · 2026-09-21';
+  var UI_VER = 'm22 · 2026-09-23';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -577,17 +577,38 @@
 
   var ATT_ONE = { 'attend.set': 1, 'attend.clear': 1 };
   var ATT_MANY = { 'attend.setMany': 1, 'attend.clearMany': 1 };
+  /* 신고서·증빙 (m22 · PC 3.54) — PC가 3.54보다 옛 판이면 명령을 모른다(«업데이트해 주세요»로 거절). 그때는 단추를 아예 안 낸다 */
+  var DOC_F = [['s', '신고서'], ['e', '증빙']];
+  function pcHas(want) {
+    var v = V(), a = String((v && v.ver) || '0').split('.'), b = String(want).split('.');
+    for (var i = 0; i < 3; i++) { var x = +a[i] || 0, y = +b[i] || 0; if (x !== y) return x > y; }
+    return true;
+  }
+  function docOf(rec) { return (rec && rec.doc && typeof rec.doc === 'object') ? rec.doc : {}; }
   function attRec(cls, date, key) {
     var c = clsOf(cls);
     var rec = (c && c.days[date] && c.days[date][key]) || null;
+    var baseDoc = docOf(rec);
     var mark = '';
     pend().forEach(function (o) {
       var p = o.p || {};
       if (p.cls !== cls || p.date !== date) return;
+      /* 서류 체크 — 아직 PC에 안 닿은 것도 화면에 얹는다(안 얹으면 누른 직후 도로 풀려 보인다) */
+      if (o.type === 'attend.doc' && p.key === key) {
+        if (isActive(o) && rec) {
+          var d0 = {}; for (var f in docOf(rec)) d0[f] = 1;
+          DOC_F.forEach(function (x) { if (typeof p[x[0]] === 'boolean') { if (p[x[0]]) d0[x[0]] = 1; else delete d0[x[0]]; } });
+          rec = JSON.parse(JSON.stringify(rec)); rec.doc = d0; mark = 'wait';
+        } else if (o.status === 'applied' && mark !== 'wait') mark = 'ok';
+        else if (isRejected(o) && mark !== 'wait') mark = 'rej';
+        return;
+      }
       var hit = ATT_ONE[o.type] ? p.key === key : (ATT_MANY[o.type] ? arr(p.keys).indexOf(key) >= 0 : false);
       if (!hit) return;
       if (isActive(o)) {
         rec = (o.type === 'attend.set' || o.type === 'attend.setMany') ? (p.rec || null) : null;
+        /* 폰은 g·k·why·p만 보내고 PC는 서류 표시를 이어받는다(3.54) — 화면도 같게 */
+        if (rec && Object.keys(baseDoc).length) { rec = JSON.parse(JSON.stringify(rec)); rec.doc = baseDoc; }
         mark = 'wait';
       } else if (o.status === 'applied') {
         if (mark !== 'wait') mark = 'ok';
@@ -2219,6 +2240,148 @@
     return sortedStudents(c).filter(function (s) { return ui.sel.keys[s.key]; }).map(function (s) { return s.key; });
   }
 
+  /* ── 제출 확인 (m22 · PC 3.54) ─────────────────────────────────
+     ① 출결 서류 — 기록마다 [신고서][증빙] · ② 내 확인표 — 반 학생마다 냄/안 냄.
+     🔴 모두 «켜기/끄기» 상태로 보낸다(뒤집기 아님) — 두 번 가도, PC와 동시에 눌러도 뒤집히지 않는다.
+     PC에 닿기 전에도 화면에 얹는다(chkView·attRec) — 안 얹으면 누른 직후 도로 풀려 «안 눌린다»가 된다. */
+  function renderDocRow(cls, date, key, rec) {
+    var row = $('sh-doc');
+    if (!row) return;
+    clear(row);
+    row.hidden = !(rec && pcHas('3.54.0'));
+    if (row.hidden) return;
+    row.appendChild(h('span', 'lb', '서류'));
+    DOC_F.forEach(function (x) {
+      var on = !!docOf(rec)[x[0]];
+      var b = btn('dtg' + (on ? ' on' : ''), (on ? '✓ ' : '') + x[1], function () {
+        var p = { cls: cls, date: date, key: key }; p[x[0]] = !on;
+        M.op('attend.doc', p);
+        renderSheetLive();
+      });
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      row.appendChild(b);
+    });
+  }
+  function chkName(id) { var x = chkView().filter(function (c) { return c.id === id; })[0]; return x ? x.t : ''; }
+  function chkCls(id) { var x = chkView().filter(function (c) { return c.id === id; })[0]; return x ? x.cls : ''; }
+  // PC가 보낸 확인표 + 아직 안 닿은 만들기·체크를 얹은 것
+  function chkView() {
+    var v = V();
+    var list = arr(v && v.checks).map(function (x) {
+      var d = {}; arr(x.done).forEach(function (k) { d[k] = 1; });
+      return { id: x.id, t: String(x.t || ''), cls: x.cls, due: x.due || '', done: d, mark: '' };
+    });
+    pend().forEach(function (o) {
+      var p = o.p || {};
+      if (o.type === 'check.add' && isActive(o) && !list.some(function (x) { return x.id === p.id; })) list.push({ id: p.id, t: String(p.t || ''), cls: p.cls, due: p.due || '', done: {}, mark: 'wait' });
+      if (o.type === 'check.set' && isActive(o)) list.forEach(function (x) { if (x.id === p.id) { if (p.on) x.done[p.key] = 1; else delete x.done[p.key]; x.mark = 'wait'; } });
+    });
+    return list;
+  }
+  function docRows(all) {
+    var m = attendModel(), out = [];
+    arr(m && m.classes).forEach(function (c) {
+      Object.keys(c.days || {}).forEach(function (d) {
+        Object.keys(c.days[d] || {}).forEach(function (k) {
+          var a = attRec(c.cls, d, k);
+          if (!a.rec || !a.rec.g) return;
+          var dc = docOf(a.rec), miss = DOC_F.filter(function (x) { return !dc[x[0]]; }).length;
+          if (!all && !miss) return;
+          var st = stuIn(c, k);
+          out.push({ cls: c.cls, d: d, key: k, st: st, rec: a.rec, mark: a.mark });
+        });
+      });
+    });
+    return out.sort(function (a, b) { return a.d < b.d ? 1 : a.d > b.d ? -1 : ((a.st && a.st.no) || 0) - ((b.st && b.st.no) || 0); });
+  }
+  function openCheckSheet() {
+    if (!ui.ckTab) ui.ckTab = 'doc';
+    // fsOpen은 내용을 먼저 그리고 나서 «열림»(ui.overlay)을 켠다 — 열린 뒤에 그린다(drawCheck는 열려 있을 때만 그린다)
+    if (fsOpen('제출 확인', function (body) { ui.ckBody = body; })) drawCheck();
+  }
+  function drawCheck() {
+    var body = ui.ckBody;
+    if (!body || ui.overlay !== 'form') return;
+    clear(body);
+    // 폰의 다른 고르기(구분·종류)와 같은 까만 채움 — 지금 탭이 한눈에 보이게
+    var seg = h('div', 'seg ck-seg');
+    seg.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+    [['doc', '출결 서류'], ['list', '내 확인표']].forEach(function (x) {
+      var b = btn('', x[1], function () { ui.ckTab = x[0]; drawCheck(); });
+      b.setAttribute('aria-pressed', ui.ckTab === x[0] ? 'true' : 'false');
+      seg.appendChild(b);
+    });
+    body.appendChild(seg);
+    if (ui.ckTab === 'doc') {
+      var rows = docRows(!!ui.ckAll);
+      var tl = h('div', 'tool');
+      tl.appendChild(h('span', 'tx', ui.ckAll ? '최근 기록 모두' : '안 낸 서류만'));
+      tl.appendChild(btn('tbtn2', ui.ckAll ? '안 낸 것만' : '모두 보기', function () { ui.ckAll = !ui.ckAll; drawCheck(); }));
+      body.appendChild(tl);
+      if (!rows.length) { body.appendChild(empty(ui.ckAll ? '최근 출결 기록이 없습니다' : '안 낸 서류가 없습니다')); return; }
+      var last = '';
+      rows.forEach(function (r) {
+        if (r.d !== last) { body.appendChild(sec(dayLabel(r.d))); last = r.d; }
+        var line = h('div', 'ckr');
+        line.appendChild(h('span', 'who', r.cls + ' ' + (r.st ? r.st.no + ' ' + r.st.name : r.key.split('|')[1] || r.key)));
+        line.appendChild(h('span', 'rk', (r.rec.g || '') + (r.rec.k || '')));
+        DOC_F.forEach(function (x) {
+          var on = !!docOf(r.rec)[x[0]];
+          var b = btn('dtg' + (on ? ' on' : ''), (on ? '✓ ' : '') + x[1], function () {
+            var p = { cls: r.cls, date: r.d, key: r.key }; p[x[0]] = !on;
+            M.op('attend.doc', p); drawCheck();
+          });
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+          line.appendChild(b);
+        });
+        if (r.mark) line.appendChild(markEl(r.mark));
+        body.appendChild(line);
+      });
+      return;
+    }
+    // 내 확인표
+    var m = attendModel();
+    var form = h('div', 'ed');
+    form.appendChild(fLabel('새 확인표', 'ck-t'));
+    var tIn = fInput('ck-t', 'text', '', { maxlength: '60', placeholder: '예: 체험학습 동의서' });
+    form.appendChild(tIn);
+    var sel = document.createElement('select'); sel.className = 'inp'; sel.id = 'ck-cls';
+    arr(m && m.classes).forEach(function (c) { var op = document.createElement('option'); op.value = c.cls; op.textContent = c.cls + (c.hr ? ' (담임)' : ''); if (c.cls === ui.stuCls) op.selected = true; sel.appendChild(op); });
+    form.appendChild(fLabel('반', 'ck-cls')); form.appendChild(sel);
+    form.appendChild(btn('pbtn in', '만들기', function () {
+      var t = String(tIn.value || '').replace(/\s+/g, ' ').trim();
+      if (!t) { toast('확인표 이름을 적어 주세요'); tIn.focus(); return; }
+      var id = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      M.op('check.add', { id: id, t: t, cls: sel.value });
+      ui.ckOpen = id; toast('«' + t + '»을 만들었습니다 · PC 반영 대기'); drawCheck();
+    }));
+    body.appendChild(form);
+    var list = chkView();
+    if (!list.length) { body.appendChild(empty('아직 만든 확인표가 없습니다')); return; }
+    list.forEach(function (x, i) {
+      var c = clsOf(x.cls), studs = c ? sortedStudents(c) : [];
+      var got = studs.filter(function (s) { return x.done[s.key]; }).length;
+      var open = ui.ckOpen ? ui.ckOpen === x.id : i === 0;
+      var hd = btn('ckh' + (open ? ' on' : ''), x.t + ' · ' + x.cls + ' — ' + studs.length + '명 중 ' + got + '명', function () { ui.ckOpen = open ? '-' : x.id; drawCheck(); });
+      hd.setAttribute('aria-expanded', open ? 'true' : 'false');
+      body.appendChild(hd);
+      if (!open) return;
+      var miss = studs.filter(function (s) { return !x.done[s.key]; });
+      if (miss.length) body.appendChild(h('p', 'ckm', '미제출 ' + miss.length + '명: ' + miss.map(function (s) { return s.name; }).join(', ')));
+      var g = h('div', 'ckg');
+      studs.forEach(function (s) {
+        var on = !!x.done[s.key];
+        var b = btn('dtg st' + (on ? ' on' : ''), s.no + ' ' + s.name + (on ? ' ✓' : ''), function () {
+          M.op('check.set', { id: x.id, key: s.key, on: !on }); ui.ckOpen = x.id; drawCheck();
+        });
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        g.appendChild(b);
+      });
+      body.appendChild(g);
+      if (x.mark) body.appendChild(h('p', 'ckm', 'PC 반영 대기'));
+    });
+  }
+
   function renderStu() {
     var v = V();
     var m = attendModel();
@@ -2271,6 +2434,7 @@
     var tool = h('div', 'tool');
     if (!ui.sel) {
       tool.appendChild(h('span', 'tx', '학생을 누르면 출결·상담·활동기록을 적습니다'));
+      if (pcHas('3.54.0') && Array.isArray(v.checks)) tool.appendChild(btn('tbtn2', '제출 확인', function () { openCheckSheet(); }));
       tool.appendChild(btn('tbtn2', '여러 명 선택', function () {
         ui.sel = { cls: c.cls, keys: {} };
         ui.clearArm = 0;
@@ -2797,6 +2961,7 @@
       now.appendChild(h('span', '', '지금 ' + recText(a.rec)));
       if (a.mark) now.appendChild(markEl(a.mark));
       $('sh-clear').disabled = !a.rec;
+      renderDocRow(c.cls, sh.date, sh.key, a.rec);
       renderTalk(c, st);
       return;
     }
@@ -3598,7 +3763,8 @@
     'ot.set': '초과근무', 'prog.set': '진도', 'prog.clear': '진도 지움',
     'attend.set': '출결', 'attend.clear': '출결 되돌림',
     'attend.setMany': '출결 · 여러 명', 'attend.clearMany': '출석으로 · 여러 명',
-    'snote.add': '상담기록', 'snote.act': '활동기록'
+    'snote.add': '상담기록', 'snote.act': '활동기록',
+    'attend.doc': '서류 체크', 'check.add': '확인표 만들기', 'check.set': '제출 체크'
   };
   function firstLine(s) {
     var t = String(s || '').split('\n')[0];
@@ -3657,6 +3823,10 @@
       case 'attend.clearMany': return pre + arr(p.keys).length + '명 출석으로 · ' + md(p.date);
       case 'snote.add':
       case 'snote.act': return pre + (p.name || '') + ' · ' + (p.a && areaLabelOf(p.a, p.s) ? areaLabelOf(p.a, p.s) + ' · ' : '') + firstLine(p.t);
+      case 'attend.doc': return pre + stuNameIn(p.cls, p.key) + ' · ' + md(p.date) + ' · ' + DOC_F.filter(function (x) { return typeof p[x[0]] === 'boolean'; })
+        .map(function (x) { return x[1] + (p[x[0]] ? ' 냄' : ' 취소'); }).join(' · ');
+      case 'check.add': return firstLine(p.t) + ' · ' + (p.cls || '');
+      case 'check.set': return (chkName(p.id) || '확인표') + ' · ' + stuNameIn(chkCls(p.id), p.key) + (p.on ? ' 냄' : ' 취소');
     }
     return '';
   }

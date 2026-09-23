@@ -1367,3 +1367,22 @@ table.t.wk-md th, table.t.wk-md td { white-space: pre-line; word-break: keep-all
 .bar.k-sch.imp { box-shadow: inset 2px 0 0 var(--acc); }
 .src.office, .src.yplan { background: var(--bg); color: var(--fg2); border-color: var(--line2); }
 .ed .jj-more{margin:10px 0 2px;align-self:flex-start}
+
+/* 제출 확인 (m22 · PC 3.54) — 켜짐은 색+✓ 두 가지로(색만으로는 색약·어두운 테마에서 안 보인다) */
+.docrow{display:flex;gap:6px;align-items:center;margin:4px 0 10px}
+.docrow .lb{font-size:13px;color:var(--tx2,#666);margin-right:2px}
+.dtg{border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;font:inherit;font-size:13px;padding:6px 10px;border-radius:8px;min-height:36px}
+.dtg.on{background:rgba(52,199,89,.18);border-color:#34c759;font-weight:700}
+.ckr{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid rgba(128,128,128,.15);flex-wrap:wrap}
+.ckr .who{flex:1;min-width:110px;font-size:14px;word-break:keep-all}
+.ckr .rk{font-size:12px;opacity:.75}
+.ckh{display:block;width:100%;text-align:left;margin-top:8px;padding:10px 12px;border-radius:10px;border:1px solid rgba(128,128,128,.3);background:transparent;color:inherit;font:inherit;font-size:14px;word-break:keep-all}
+.ckh.on{font-weight:700}
+.ckm{font-size:13px;opacity:.8;margin:6px 2px;word-break:keep-all}
+.ckg{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;margin:6px 0 4px}
+.dtg.st{text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 여백 — 시트의 다른 칸(.ed)과 같은 양옆 여백 */
+.ck-seg{margin:10px calc(10px + var(--sar)) 6px calc(10px + var(--sal))}
+.docrow,.ckr,.ckh,.ckm,.ckg{margin-left:calc(10px + var(--sal));margin-right:calc(10px + var(--sar))}
+.ckh{width:auto}
+#fs-body .tool{padding-left:calc(10px + var(--sal));padding-right:calc(10px + var(--sar))}
