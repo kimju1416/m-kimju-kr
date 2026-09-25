@@ -17,7 +17,7 @@
   var EP = { auth: 'https://accounts.google.com', api: 'https://www.googleapis.com', oidc: 'https://openidconnect.googleapis.com' };
   /* 검사 전용 — 내 PC(127.0.0.1·localhost)에서 열었을 때만 가짜 구글 주소를 받는다. 배포 주소에서는 절대 안 바뀐다 */
   if (/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && window.TD2M_TEST && window.TD2M_TEST.fake) {
-    EP = { auth: window.TD2M_TEST.fake, api: window.TD2M_TEST.fake, oidc: window.TD2M_TEST.fake };
+    EP = { auth: window.TD2M_TEST.fake, api: window.TD2M_TEST.fake, oidc: window.TD2M_TEST.fake, cal: window.TD2M_TEST.cal || window.TD2M_TEST.fake };
   }
   var VIEW = 'td2-mobile.json';
   var P = 'td2m:';
@@ -72,7 +72,7 @@
   function goGoogle(prompt, hint) {
     var st = rid();
     lsSet('rd', { state: st, prompt: prompt || '', at: Date.now() });
-    var q = new URLSearchParams({ client_id: CLIENT_ID, redirect_uri: HERE, response_type: 'token', scope: SCOPE, state: st, include_granted_scopes: 'true' });
+    var q = new URLSearchParams({ client_id: CLIENT_ID, redirect_uri: HERE, response_type: 'token', scope: scopeNow(), state: st, include_granted_scopes: 'true' });
     if (prompt) q.set('prompt', prompt);
     if (hint) q.set('login_hint', hint);
     location.assign(EP.auth + '/o/oauth2/v2/auth?' + q.toString());
@@ -106,6 +106,8 @@
     if (h.get('error')) return { err: h.get('error'), prompt: rd.prompt };
     var granted = String(h.get('scope') || '').split(/\s+/);
     if (h.get('scope') && granted.indexOf(SCOPE_DRIVE) < 0) return { err: 'no-drive' };
+    // 구글 캘린더 쓰기(m23) — 켠 폰인데 허락 화면에서 «캘린더 일정» 칸을 안 켰다. 드라이브 로그인은 그대로 두고 캘린더만 멈춘다
+    if (calPref().on && h.get('scope')) lsSet('gcalErr', granted.indexOf(SCOPE_EV) < 0 ? 'no-cal' : null);
     // 새 열쇠에는 아직 계정이 없다(email 칸 없음) — ensureEmail이 구글에 물어 붙인다
     lsSet('tok', { access: h.get('access_token'), exp: Date.now() + Math.max(60, +h.get('expires_in') || 3600) * 1000 });
     lsSet('silentAt', 0);
@@ -336,6 +338,193 @@
     set({ phase: 'error', busy: false, err: e.message, errCode: e.code === 'http' ? 'net' : (e.code || 'net') });
   }
 
+  /* ── 구글 캘린더 쓰기(m23 · PC 3.57과 짝) ──────────────────────────
+     켜면 폰 로그인에 캘린더 권한을 **얹는다**(웹은 include_granted_scopes로 점진 동의가 된다 — 드라이브 로그인은 그대로).
+     폰이 구글 캘린더를 **직접** 읽고 쓴다 — PC가 꺼져 있어도 바로 들어가고, 폰 구글 캘린더 앱에도 곧바로 보인다.
+     🔴 켜기 전에는 이 부분이 아무것도 안 한다(요청하는 권한도 예전 그대로).
+     🔴 받은 일정은 **메모리에만** — 폰 저장소에 남기지 않는다(학생 자료와 같은 원칙). 저장하는 것은 켬/끔·고른 캘린더·저장 위치뿐.
+     반복은 구글에 «회차로 펼쳐서» 받는다(singleEvents) — 폰은 반복 규칙을 해석하지 않는다. 회차 번호도 같이 온다.
+     TD2만 쓰는 값(중요 td2r·끝냄 td2done)은 PC와 같은 숨김 칸(extendedProperties.private)에 적는다 — PC·폰이 같이 본다. */
+  var SCOPE_EV = 'https://www.googleapis.com/auth/calendar.events.owned';
+  var SCOPE_LIST = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
+  function calPref() { var g = lsGet('gcal', null); return g && typeof g === 'object' ? g : { on: 0 }; }
+  function scopeNow() { return calPref().on ? SCOPE + ' ' + SCOPE_EV + ' ' + SCOPE_LIST : SCOPE; }
+  state.gcal = { items: [], cals: [], at: 0, err: '', busy: false };
+  var calBase = function () { return (EP.cal || EP.api) + '/calendar/v3'; };
+  function capi(method, path, body, headers) {
+    var access = tok();
+    if (!access) return Promise.reject(gErr('auth', '로그인이 끝났습니다'));
+    var hd = { Authorization: 'Bearer ' + access };
+    if (body) hd['Content-Type'] = 'application/json';
+    Object.keys(headers || {}).forEach(function (k) { hd[k] = headers[k]; });
+    return call(calBase() + path, { method: method, headers: hd, body: body ? JSON.stringify(body) : undefined }).then(function (r) {
+      if (r.status === 401) { lsSet('tok', null); throw gErr('auth', '로그인이 끝났습니다'); }
+      if (r.status === 204) return null;
+      return r.text().then(function (t) {
+        var j = null;
+        try { j = t ? JSON.parse(t) : null; } catch (e) { if (r.ok) throw gErr('net', '구글 캘린더가 아닌 응답이 왔습니다 — 와이파이가 막고 있을 수 있어요'); }
+        if (r.ok) return j;
+        if (r.status === 403 && /insufficient|SCOPE_INSUFFICIENT/i.test(t)) throw gErr('no-cal', '구글 캘린더 허락이 빠졌습니다');
+        if (r.status === 412) throw gErr('conflict', '다른 곳에서 먼저 고친 일정입니다 — 새로 받은 내용을 보고 다시 해 주세요');
+        if (r.status === 404 || r.status === 410) throw gErr('not-found', '구글에서 이미 지워진 일정입니다');
+        if (r.status === 409) throw gErr('exists', '이미 있는 일정입니다');
+        throw gErr('http', '구글 캘린더에 잠시 연결하지 못했습니다(오류 ' + r.status + ')');
+      });
+    });
+  }
+  function ymdL(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function keyAdd(k, n) { var d = new Date(k + 'T00:00:00'); d.setDate(d.getDate() + n); return ymdL(d); }
+  function offIso(d) {
+    var o = -d.getTimezoneOffset(), sg = o >= 0 ? '+' : '-', a = Math.abs(o);
+    return ymdL(d) + 'T' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':00' + sg + ('0' + Math.floor(a / 60)).slice(-2) + ':' + ('0' + (a % 60)).slice(-2);
+  }
+  // 받을 범위 — PC가 폰에 싣는 범위와 같게(지난달 1일 ~ 다다음 달 말일)
+  function calRange() { var t = new Date(); return { a: new Date(t.getFullYear(), t.getMonth() - 1, 1), b: new Date(t.getFullYear(), t.getMonth() + 3, 1) }; }
+  function slimEv(it, cal) {
+    var x = (it.extendedProperties && it.extendedProperties.private) || {};
+    return {
+      id: it.id, calId: cal.id, cal: cal.nm, etag: it.etag || '', t: String(it.summary || ''), s: it.start || null, e: it.end || null,
+      rec: it.recurringEventId || '', att: Array.isArray(it.attendees) && it.attendees.length ? 1 : 0,
+      red: x.td2r === '1' ? 1 : 0, done: x.td2done === '1' ? 1 : 0
+    };
+  }
+  var calLoading = null;
+  function calLoad() {
+    if (!calPref().on || !tok()) return Promise.resolve();
+    if (lsGet('gcalErr', null) === 'no-cal') { state.gcal = merge(state.gcal, { err: '구글 캘린더 허락이 빠졌습니다 — [다시 허락]을 눌러 «캘린더 일정» 칸을 켜 주세요', errCode: 'no-cal' }); emit(); return Promise.resolve(); }
+    if (calLoading) return calLoading;
+    state.gcal = merge(state.gcal, { busy: true }); emit();
+    var pref = calPref(), rg = calRange();
+    calLoading = capi('GET', '/users/me/calendarList?' + new URLSearchParams({ minAccessRole: 'owner', fields: 'items(id,summary,summaryOverride,primary)' }).toString())
+      .then(function (j) { return (j && j.items) || []; }, function (e) { if (e.code === 'no-cal') return []; throw e; })
+      .then(function (list) {
+        var me = tokEmail() || state.email;
+        if (!list.length) list = [{ id: me || 'primary', summary: me || '내 캘린더', primary: true }];
+        var cals = list.map(function (c) { return { id: c.id, nm: c.summaryOverride || c.summary || c.id, primary: !!c.primary }; });
+        var want = Array.isArray(pref.cals) && pref.cals.length ? pref.cals : cals.filter(function (c) { return c.primary; }).map(function (c) { return c.id; });
+        var on = cals.filter(function (c) { return want.indexOf(c.id) >= 0; });
+        var items = [];
+        var chain = Promise.resolve();
+        on.forEach(function (cal) {
+          var page = '';
+          var step = function () {
+            var q = { singleEvents: 'true', orderBy: 'startTime', maxResults: '2500', timeMin: offIso(rg.a), timeMax: offIso(rg.b),
+              fields: 'nextPageToken,items(id,status,summary,start,end,recurringEventId,etag,attendees(self),extendedProperties)' };
+            if (page) q.pageToken = page;
+            return capi('GET', '/calendars/' + encodeURIComponent(cal.id) + '/events?' + new URLSearchParams(q).toString()).then(function (j) {
+              ((j && j.items) || []).forEach(function (it) { if (it && it.id && it.status !== 'cancelled') items.push(slimEv(it, cal)); });
+              page = (j && j.nextPageToken) || '';
+              if (page) return step();
+            });
+          };
+          chain = chain.then(step);
+        });
+        return chain.then(function () {
+          state.gcal = { items: items, cals: cals.map(function (c) { return merge(c, { on: want.indexOf(c.id) >= 0 }); }), at: Date.now(), err: '', errCode: '', busy: false };
+          emit();
+        });
+      })
+      .then(null, function (e) {
+        if (e && e.code === 'no-cal') lsSet('gcalErr', 'no-cal');
+        state.gcal = merge(state.gcal, { busy: false, err: e && e.code === 'no-cal' ? '구글 캘린더 허락이 빠졌습니다 — [다시 허락]을 눌러 «캘린더 일정» 칸을 켜 주세요' : (e && e.message) || '구글 캘린더를 받지 못했습니다', errCode: (e && e.code) || 'net' });
+        emit();
+        if (e && e.code === 'auth') silent();
+      });
+    var done = function () { calLoading = null; };
+    calLoading.then(done, done);
+    return calLoading;
+  }
+  /* 시각 — TD2엔 끝 시각이 없어 새 시각 일정은 1시간. 고칠 때는 원래 길이를 지킨다 */
+  function calTiming(date, tm, endKey, durMs, span) {
+    if (!tm) {
+      var last = endKey && endKey > date ? endKey : keyAdd(date, Math.max(1, span || 1) - 1);
+      return { start: { date: date, dateTime: null, timeZone: null }, end: { date: keyAdd(last, 1), dateTime: null, timeZone: null } };
+    }
+    var s0 = new Date(date + 'T' + tm + ':00');
+    var e0 = new Date(s0.getTime() + (durMs > 0 ? durMs : 3600000));
+    if (endKey && endKey > date) e0 = new Date(new Date(endKey + 'T' + tm + ':00').getTime() + 3600000);
+    var tz = 'Asia/Seoul';
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch (e) { /* 그대로 */ }
+    var li = function (d) { return ymdL(d) + 'T' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':00'; };
+    return { start: { dateTime: li(s0), timeZone: tz, date: null }, end: { dateTime: li(e0), timeZone: tz, date: null } };
+  }
+  function b32id() {
+    var a = new Uint8Array(20); window.crypto.getRandomValues(a);
+    return 'td2' + Array.prototype.map.call(a, function (b) { return '0123456789abcdefghijklmnopqrstuv'[b % 32]; }).join('');
+  }
+  function calWrite(fn) {
+    if (!calPref().on) return Promise.resolve({ ok: false, error: '구글 캘린더 쓰기를 켜지 않았습니다' });
+    return fn().then(function () { return calLoad().then(function () { return { ok: true }; }); }, function (e) {
+      if (e && e.code === 'no-cal') lsSet('gcalErr', 'no-cal');
+      if (e && (e.code === 'conflict' || e.code === 'not-found')) calLoad();
+      if (e && e.code === 'auth') silent();
+      return { ok: false, code: e && e.code, error: (e && e.message) || '구글 캘린더에 쓰지 못했습니다' };
+    });
+  }
+  /* p = {calId, t, date, tm, end, red} — 번호는 우리가 정한다(응답이 끊겨 다시 보내도 409로 두 벌 안 됨) */
+  function calAdd(p) {
+    return calWrite(function () {
+      var tm = /^\d{2}:\d{2}$/.test(p.tm || '') ? p.tm : '';
+      var body = { id: b32id(), summary: String(p.t || '').trim() };
+      var tt = calTiming(p.date, tm, p.end, 0, 1);
+      ['start', 'end'].forEach(function (k) { Object.keys(tt[k]).forEach(function (f) { if (tt[k][f] === null) delete tt[k][f]; }); body[k] = tt[k]; });
+      body.extendedProperties = { private: p.red ? { td2: '1', td2r: '1' } : { td2: '1' } };
+      var path = '/calendars/' + encodeURIComponent(p.calId) + '/events';
+      return capi('POST', path, body).then(null, function (e) {
+        if (e.code === 'net') return capi('POST', path, body).then(null, function (e2) { if (e2.code === 'exists') return null; throw e2; });
+        throw e;
+      });
+    });
+  }
+  /* p = {x(받은 줄), scope:'one'|'all', t?, date?, tm?, red?, done?} — 반복 전체는 이름·중요만 */
+  function calEdit(p) {
+    return calWrite(function () {
+      var x = p.x, body = {};
+      if (x.att) return Promise.reject(gErr('att', '참석자가 있는 일정은 구글 캘린더 앱에서 고쳐 주세요'));
+      if (p.t !== undefined) body.summary = String(p.t).trim();
+      if (p.scope !== 'all' && (p.date !== undefined || p.tm !== undefined)) {
+        var sd = x.s && (x.s.date || (x.s.dateTime && ymdL(new Date(x.s.dateTime))));
+        var stm = x.s && x.s.dateTime ? new Date(x.s.dateTime).toTimeString().slice(0, 5) : '';
+        var date = p.date || sd, tm = p.tm === undefined ? stm : p.tm;
+        var dur = x.s && x.s.dateTime && x.e && x.e.dateTime ? new Date(x.e.dateTime) - new Date(x.s.dateTime) : 0;
+        var span = x.s && x.s.date && x.e && x.e.date ? Math.max(1, Math.round((new Date(x.e.date + 'T00:00:00') - new Date(x.s.date + 'T00:00:00')) / 86400000)) : 1;
+        var tt = calTiming(date, tm, '', dur, span);
+        body.start = tt.start; body.end = tt.end;
+      }
+      var pv = {};
+      if (p.red !== undefined) pv.td2r = p.red ? '1' : '0';
+      if (p.done !== undefined) pv.td2done = p.done ? '1' : '0';
+      if (Object.keys(pv).length) body.extendedProperties = { private: pv };
+      var id = p.scope === 'all' && x.rec ? x.rec : x.id;
+      var hd = p.scope === 'all' && x.rec ? {} : (x.etag ? { 'If-Match': x.etag } : {});
+      return capi('PATCH', '/calendars/' + encodeURIComponent(x.calId) + '/events/' + encodeURIComponent(id), body, hd);
+    });
+  }
+  function calDel(p) {
+    return calWrite(function () {
+      var x = p.x;
+      if (x.att) return Promise.reject(gErr('att', '참석자가 있는 일정은 구글 캘린더 앱에서 지워 주세요'));
+      var all = p.scope === 'all' && x.rec;
+      return capi('DELETE', '/calendars/' + encodeURIComponent(x.calId) + '/events/' + encodeURIComponent(all ? x.rec : x.id), null, all ? {} : (x.etag ? { 'If-Match': x.etag } : {}))
+        .then(null, function (e) { if (e.code === 'not-found') return null; throw e; });
+    });
+  }
+  /* 켜기 — 허락 화면을 한 번 거친다(캘린더 칸이 보이게 consent). 돌아오면 start가 이어 받는다 */
+  function calEnable() {
+    var g = calPref();
+    lsSet('gcal', merge(g, { on: 1 }));
+    lsSet('gcalErr', null);
+    goGoogle('consent', lsGet('email', '') || state.email);
+  }
+  function calDisable() {
+    var g = calPref();
+    lsSet('gcal', merge(g, { on: 0 }));
+    lsSet('gcalErr', null);
+    state.gcal = { items: [], cals: [], at: 0, err: '', busy: false };
+    emit();
+  }
+  function calSet(patch) { lsSet('gcal', merge(calPref(), patch || {})); if (patch && patch.cals) calLoad(); else emit(); }
+
   /* ── 공개 약속 ── */
   function on(fn) {
     if (typeof fn === 'function') listeners.push(fn);
@@ -395,7 +584,7 @@
     who.then(showCached, function () { });
     who.then(function () {
       return loadView(pre);
-    }).then(function () { set({ busy: false }); return flush(); }).then(schedule, failTo);
+    }).then(function () { set({ busy: false }); calLoad(); return flush(); }).then(schedule, failTo);
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible' && state.phase === 'ready' && Date.now() - state.viewAt > 60000) refresh();
     });
@@ -406,7 +595,8 @@
     goGoogle(state.errCode === 'no-drive' ? 'consent select_account' : 'select_account', '');
   }
   function logout() {
-    ['tok', 'email', 'view', 'vid', 'pending', 'silentAt', 'rd'].forEach(function (k) { lsSet(k, null); });
+    ['tok', 'email', 'view', 'vid', 'pending', 'silentAt', 'rd', 'gcal', 'gcalErr'].forEach(function (k) { lsSet(k, null); });
+    state.gcal = { items: [], cals: [], at: 0, err: '', busy: false };
     dropFiles();
     clearTimeout(pollTimer);
     set({ phase: 'login', email: '', view: null, viewAt: 0, pending: [], busy: false, err: '', errCode: '', needLogin: false });
@@ -416,7 +606,7 @@
     if (!tok()) { if (!silent()) set({ phase: 'login' }); return; }
     set({ busy: true });
     // 계정 확인 → 올리기 → 받기. 계정을 모르면 올리지 않는다(ensureEmail이 실패로 끝낸다)
-    ensureEmail().then(function () { return flush(); }).then(loadView).then(function () { set({ busy: false }); schedule(); }, failTo);
+    ensureEmail().then(function () { return flush(); }).then(loadView).then(function () { set({ busy: false }); schedule(); calLoad(); }, failTo);
   }
   var TYPES = {
     'todo.add': 1, 'todo.done': 1, 'todo.edit': 1, 'todo.del': 1, 'memo.add': 1, 'memo.edit': 1, 'memo.del': 1, 'memo.check': 1,
@@ -448,5 +638,7 @@
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || (window.TD2M_TEST && window.TD2M_TEST.sw))) {
     window.addEventListener('load', function () { navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function () { }); });
   }
-  window.TD2M = { state: state, on: on, start: start, login: login, logout: logout, refresh: refresh, op: op, openExternal: openExternal, held: held, file: fileUrl, canLeave: null };
+  window.TD2M = { state: state, on: on, start: start, login: login, logout: logout, refresh: refresh, op: op, openExternal: openExternal, held: held, file: fileUrl, canLeave: null,
+    // 구글 캘린더 쓰기(m23) — pref(켬·고른 캘린더·저장 위치) · enable/disable · load · add/edit/del
+    gcal: { pref: calPref, enable: calEnable, disable: calDisable, set: calSet, load: calLoad, add: calAdd, edit: calEdit, del: calDel } };
 })();

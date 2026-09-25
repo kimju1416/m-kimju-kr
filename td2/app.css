@@ -1386,3 +1386,9 @@ table.t.wk-md th, table.t.wk-md td { white-space: pre-line; word-break: keep-all
 .docrow,.ckr,.ckh,.ckm,.ckg{margin-left:calc(10px + var(--sal));margin-right:calc(10px + var(--sar))}
 .ckh{width:auto}
 #fs-body .tool{padding-left:calc(10px + var(--sal));padding-right:calc(10px + var(--sar))}
+
+/* 구글 캘린더 쓰기(m23) — 저장 위치 줄 · 누를 수 있는 구글 일정 제목 */
+.ev-dest { margin-top: 8px; }
+.ev-dest .segr button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+td.gtap { cursor: pointer; }
+td.gtap .ttl { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); text-underline-offset: 3px; }

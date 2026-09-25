@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm22 · 2026-09-23';
+  var UI_VER = 'm23 · 2026-09-25';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -471,14 +471,36 @@
   }
 
   // 그 날 일정 + 폰에서 적은 일정(event.add)·체크(event.done)
+  /* 구글 캘린더 쓰기(m23) — 폰이 구글에서 직접 받은 일정. 받아 둔 게 있으면 PC가 폰 파일에 실어 준 구글 줄(g:1)은 뺀다.
+     여러 날 일정은 날마다 한 줄(가운데 날은 cont). 시각은 시작한 날에만. */
+  function gcalLive() { var g = S().gcal; return M.gcal && M.gcal.pref().on && g && g.at ? g : null; }
+  function gcalDayRows(ds) {
+    var g = gcalLive();
+    if (!g) return [];
+    var out = [];
+    g.items.forEach(function (x) {
+      if (!x.s) return;
+      var sd = x.s.date || (x.s.dateTime ? ymd(new Date(x.s.dateTime)) : '');
+      var ed = sd;
+      if (x.e && x.e.date) { var d0 = new Date(x.e.date + 'T00:00:00'); d0.setDate(d0.getDate() - 1); ed = ymd(d0); }
+      else if (x.e && x.e.dateTime) ed = ymd(new Date(new Date(x.e.dateTime).getTime() - 60000));
+      if (ed < sd) ed = sd;
+      if (ds < sd || ds > ed) return;
+      var tm = ds === sd && x.s.dateTime ? hm(new Date(x.s.dateTime)) : '';
+      out.push({ t: x.t || '(제목 없음)', tm: tm, end: '', src: 'gcal', red: x.red, done: x.done, cont: ds === sd ? 0 : 1, cal: x.cal, gl: x, mark: '' });
+    });
+    return out;
+  }
   function dispEvents(ds) {
     var d = dayOf(ds);
-    var list = (d ? arr(d.events) : []).filter(Boolean).map(function (e) {
+    var live = gcalLive();
+    var list = (d ? arr(d.events) : []).filter(Boolean).filter(function (e) { return !(live && e.src === 'gcal' && e.g); }).map(function (e) {
       var c = {};
       for (var k in e) if (Object.prototype.hasOwnProperty.call(e, k)) c[k] = e[k];
       c.mark = '';
       return c;
     });
+    if (live) list = list.concat(gcalDayRows(ds));
     pend().forEach(function (o) {
       var p = o.p || {};
       if (o.type === 'event.add') {
@@ -943,6 +965,7 @@
     renderTodos(t, list);
     if (todoDP) todoDP.sync();
     if (evEndDP) evEndDP.sync();
+    renderEvDest();                // 구글 캘린더를 받아 오면 [저장: 구글]이 생긴다(m23)
   }
 
   function renderMonth(t, from, to) {
@@ -1142,6 +1165,8 @@
   }
   function evTitleCell(e) {
     var c = td('');
+    // 구글 일정(m23) — 제목을 누르면 고치기 시트(참석자 일정은 보기만)
+    if (e.gl && !e.gl.att) { c.classList.add('gtap'); c.setAttribute('role', 'button'); c.tabIndex = 0; c.addEventListener('click', function () { openGcalEdit(e); }); }
     c.appendChild(h('span', 'ttl' + (e.red || e.imp ? ' hot' : ''), isSch(e) ? schTitle(e) : (e.t || '(제목 없음)')));
     if (isSch(e) && e.who) c.appendChild(h('span', 'mini', e.who));
     var mini = eventMini(e);
@@ -1157,6 +1182,17 @@
   }
   // 내 일정은 오른쪽 칸이 체크 단추(반복이면 그 회차), 학사·구글은 구분 글자
   function evKindCell(e) {
+    if (e.gl && !e.gl.att) {
+      var cg = td('ckc');
+      var bg = btn('evck' + (e.done ? ' on' : ''), null, function () { onGcalDone(e); });
+      bg.setAttribute('role', 'checkbox');
+      bg.setAttribute('aria-checked', e.done ? 'true' : 'false');
+      bg.setAttribute('aria-label', '구글 일정 ' + (e.t || '') + ' 끝냄');
+      bg.appendChild(h('span', 'bx'));
+      bg.appendChild(h('span', 'bl', '구글'));
+      cg.appendChild(bg);
+      return cg;
+    }
     if (e.src !== 'mine') {
       var c0 = td('');
       c0.appendChild(srcChip(e.src));
@@ -1171,6 +1207,80 @@
     b.appendChild(h('span', 'bl', '내'));
     c.appendChild(b);
     return c;
+  }
+  var gcalBusy = false;
+  function gcalRun(pr, okMsg) {
+    gcalBusy = true;
+    schedule();
+    return pr.then(function (r) {
+      gcalBusy = false;
+      toast(r && r.ok ? okMsg : ((r && r.error) || '구글 캘린더에 쓰지 못했습니다'));
+      schedule();
+      return r && r.ok;
+    });
+  }
+  function onGcalDone(e) {
+    if (gcalBusy) return;
+    gcalRun(M.gcal.edit({ x: e.gl, scope: 'one', done: e.done ? 0 : 1 }), e.done ? '끝냄을 되돌렸습니다' : '끝낸 표시를 했습니다');
+  }
+  /* 구글 일정 고치기 시트 — 이름·날짜·시각·중요, 반복이면 [이 날만/반복 전체], 지우기. 저장하면 구글에 바로 */
+  function openGcalEdit(e) {
+    var x = e.gl;
+    if (!x || gcalBusy) return;
+    var scope = 'one';
+    var sd = x.s && (x.s.date || (x.s.dateTime ? ymd(new Date(x.s.dateTime)) : ''));
+    var stm = x.s && x.s.dateTime ? hm(new Date(x.s.dateTime)) : '';
+    fsOpen('구글 일정 고치기', function (body) {
+      var ed = h('div', 'ed');
+      ed.appendChild(h('p', 'fs-note', (x.cal || '구글 캘린더') + (x.rec ? ' · 반복 일정' : '') + ' — 저장하면 구글에 바로 들어갑니다'));
+      var whenBox = h('div');
+      if (x.rec) {
+        ed.appendChild(fDiv('고칠 범위'));
+        var sg = segCols(radioGroup('segr', '고칠 범위', [{ id: 'one', nm: '이 날만' }, { id: 'all', nm: '반복 전체' }], scope, function (id) {
+          scope = id;
+          qsa('#fs-body .segr [data-id]').forEach(function (b) { b.setAttribute('aria-checked', b.getAttribute('data-id') === id ? 'true' : 'false'); });
+          whenBox.hidden = scope === 'all';
+        }, textBtn), 2);
+        ed.appendChild(sg);
+      }
+      ed.appendChild(fLabel('일정', 'fs-gt'));
+      var inT = fInput('fs-gt', 'text', x.t, { maxlength: '200', autocomplete: 'off' });
+      ed.appendChild(inT);
+      whenBox.appendChild(fDiv('날짜'));
+      var dp = datePicker({ id: 'fs-gd', chips: [['0', '오늘'], ['1', '내일']], label: '날짜 고르기' });
+      dp.set(sd);
+      whenBox.appendChild(dp.el);
+      whenBox.appendChild(fLabel('시각 (비우면 하루 종일)', 'fs-gtm'));
+      var inTm = fInput('fs-gtm', 'time', stm, {});
+      whenBox.appendChild(inTm);
+      ed.appendChild(whenBox);
+      if (x.rec) ed.appendChild(h('p', 'fs-note', '반복 전체의 날짜·시각은 구글 캘린더 앱에서 바꿔 주세요.'));
+      ed.appendChild(errP('fs-gerr'));
+      ed.appendChild(withId(btn('pbtn in', '저장', function () {
+        var t = inT.value.replace(/\s+/g, ' ').trim();
+        if (!t) { formErr('fs-gerr', '일정 내용을 적어 주세요'); return; }
+        var p = { x: x, scope: scope };
+        if (t !== x.t) p.t = t;
+        if (scope === 'one') {
+          var d = dp.get();
+          var tm = inTm.value;
+          if (!isYmd(d)) { formErr('fs-gerr', '날짜를 골라 주세요'); return; }
+          if (tm && !/^\d{2}:\d{2}$/.test(tm)) { formErr('fs-gerr', '시각을 다시 골라 주세요'); return; }
+          if (d !== sd) p.date = d;
+          if (tm !== stm) p.tm = tm;
+        }
+        if (p.t === undefined && p.date === undefined && p.tm === undefined) { toast('바뀐 것이 없습니다'); return; }
+        closeOverlay();
+        gcalRun(M.gcal.edit(p), '구글 캘린더에 고쳤습니다');
+      }), 'fs-gsave'));
+      ed.appendChild(withId(btn('obtn', x.done ? '끝냄 되돌리기' : '끝냄', function () { closeOverlay(); onGcalDone(e); }), 'fs-gdone'));
+      ed.appendChild(withId(armBtn('obtn', '지우기', '한 번 더 누르면 구글에서 지웁니다', function () {
+        closeOverlay();
+        gcalRun(M.gcal.del({ x: x, scope: scope }), '구글 캘린더에서 지웠습니다');
+      }), 'fs-gdel'));
+      ed.appendChild(h('p', 'fs-note', '지운 일정은 구글 캘린더 휴지통에서 30일 동안 되살릴 수 있습니다.'));
+      body.appendChild(ed);
+    });
   }
   function onEventDone(e) {
     if (e.isNew || !e.sk || !e.fp) { toast('PC에 반영된 뒤에 체크할 수 있습니다'); return; }
@@ -1368,11 +1478,31 @@
     $('todo-t').placeholder = ev ? '새 일정' : '새 할 일';
     $('todo-t-lb').textContent = ev ? '새 일정' : '새 할 일';
     $('ev-row').hidden = !ev;
+    renderEvDest();
     todoDP.showNone(!ev);
     if (ev && !todoDP.get()) todoDP.set(ui.calPicked ? ui.calSel : today());
     formErr('todo-err', '');
   }
 
+  /* 저장 위치(m23) — 구글 캘린더 쓰기를 켰을 때만. 고른 것은 기억한다(폰 설정 td2m:gcal.dest) */
+  function gcalDest() {
+    var g = gcalLive();
+    if (!g) return '';
+    var d = M.gcal.pref().dest || '';
+    var on = (g.cals || []).filter(function (c) { return c.on; });
+    return on.some(function (c) { return c.id === d; }) ? d : '';
+  }
+  function renderEvDest() {
+    var box = $('ev-dest');
+    if (!box) return;
+    clear(box);
+    var g = gcalLive();
+    var on = g ? (g.cals || []).filter(function (c) { return c.on; }) : [];
+    box.hidden = !(ui.addKind === 'event' && on.length);
+    if (box.hidden) return;
+    var items = [{ id: '', nm: '저장: TD2' }].concat(on.map(function (c) { return { id: c.id, nm: on.length > 1 ? '구글 · ' + c.nm : '구글 캘린더' }; }));
+    box.appendChild(segCols(radioGroup('segr', '저장할 곳', items, gcalDest(), function (id) { M.gcal.set({ dest: id }); renderEvDest(); }, textBtn), Math.min(items.length, 3)));
+  }
   function addItem() {
     var inp = $('todo-t');
     var t = inp.value.replace(/\s+/g, ' ').trim();
@@ -1398,6 +1528,22 @@
       if (tm) pe.tm = tm;
       if (end) pe.end = end;
       ui.lastAddAt = Date.now();
+      var dest = gcalDest();
+      if (dest) {
+        // 구글에 바로 — PC를 거치지 않는다. 실패하면 적은 글을 그대로 둔다
+        if (gcalBusy) return;
+        gcalRun(M.gcal.add({ calId: dest, t: t, date: date, tm: tm || '', end: end || '' }), dayLabel(date) + ' 구글 캘린더에 넣었습니다').then(function (ok) {
+          if (!ok) return;
+          inp.value = '';
+          $('ev-tm').value = '';
+          evEndDP.set('');
+          ui.calSel = date;
+          ui.calYm = ym(date);
+          formErr('todo-err', '');
+          renderCal();
+        });
+        return;
+      }
       M.op('event.add', pe);
       inp.value = '';
       $('ev-tm').value = '';
@@ -3721,6 +3867,31 @@
       a.appendChild(btn('obtn' + (armed ? ' arm' : ''), armed ? '한 번 더 누르면 로그아웃' : '로그아웃', onLogout));
     }
     box.appendChild(a);
+
+    /* 구글 캘린더 쓰기(m23) — 켜면 구글 허락 화면을 한 번 거친다(캘린더 칸을 켜야 한다) */
+    if (M.gcal && (s.email || s.phase === 'ready')) {
+      box.appendChild(sec('구글 캘린더'));
+      var gc = h('div', 'acct2');
+      var gp = M.gcal.pref(), gs = s.gcal || {};
+      if (!gp.on) {
+        gc.appendChild(h('p', 'opt-foot', '켜면 이 폰에서 구글 캘린더 일정을 보고 · 넣고 · 고치고 · 지웁니다. PC가 꺼져 있어도 바로 들어가고, 폰 구글 캘린더 앱에도 곧바로 보입니다.'));
+        gc.appendChild(withId(btn('obtn', '구글 캘린더 쓰기 켜기', function () { M.gcal.enable(); }), 'gc-on'));
+        gc.appendChild(h('p', 'opt-foot', '구글 허락 화면에서 «캘린더 일정» 칸을 켜 주세요. 심사 전이라 «확인되지 않은 앱» 화면이 나오면 [고급] → [이동]을 누르면 됩니다.'));
+      } else {
+        gc.appendChild(h('p', 'mail', gs.busy ? '구글 캘린더를 받는 중…' : (gs.at ? '구글 캘린더 일정 ' + (gs.items || []).length + '건 · ' + hm(new Date(gs.at)) + ' 받음' : '아직 받지 않았습니다')));
+        if (gs.err) gc.appendChild(h('p', 'warn-tx', gs.err));
+        (gs.cals || []).forEach(function (c) {
+          gc.appendChild(segCols(radioGroup('segr', c.nm, [{ id: 'on', nm: c.nm + ' 보기' }, { id: 'off', nm: '안 보기' }], c.on ? 'on' : 'off', function (id) {
+            var ons = (gs.cals || []).filter(function (x) { return x.id === c.id ? id === 'on' : x.on; }).map(function (x) { return x.id; });
+            M.gcal.set({ cals: ons });
+          }, textBtn), 2));
+        });
+        if (gs.errCode === 'no-cal') gc.appendChild(withId(btn('obtn', '다시 허락', function () { M.gcal.enable(); }), 'gc-again'));
+        gc.appendChild(withId(btn('obtn', '구글 캘린더 쓰기 끄기', function () { M.gcal.disable(); renderOptAcct(); }), 'gc-off'));
+        gc.appendChild(h('p', 'opt-foot', '끄면 이 폰 화면에서만 빠집니다. 구글 캘린더의 일정은 그대로입니다.'));
+      }
+      box.appendChild(gc);
+    }
 
     box.appendChild(sec('정보'));
     var rows = [];
