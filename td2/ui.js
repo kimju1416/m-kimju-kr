@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm23 · 2026-09-25';
+  var UI_VER = 'm24 · 2026-09-25';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -3869,7 +3869,9 @@
     box.appendChild(a);
 
     /* 구글 캘린더 쓰기(m23) — 켜면 구글 허락 화면을 한 번 거친다(캘린더 칸을 켜야 한다) */
-    if (M.gcal && (s.email || s.phase === 'ready')) {
+    /* 🔴 PC 3.57(구글 캘린더 양방향) 이상일 때만 보인다(m24) — 구글 심사 전에는 3.57을 정식으로 안 낸다(형님 09-25).
+       심사 전에 아무 선생님이나 켜면 «확인하지 않은 앱» 경고를 보고 구글의 «100명 한도»도 깎인다. 이미 켠 폰은 끌 수 있게 둔다 */
+    if (M.gcal && (s.email || s.phase === 'ready') && (pcHas('3.57') || M.gcal.pref().on)) {
       box.appendChild(sec('구글 캘린더'));
       var gc = h('div', 'acct2');
       var gp = M.gcal.pref(), gs = s.gcal || {};
