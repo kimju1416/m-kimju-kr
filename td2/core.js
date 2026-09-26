@@ -344,8 +344,10 @@
      🔴 켜기 전에는 이 부분이 아무것도 안 한다(요청하는 권한도 예전 그대로).
      🔴 받은 일정은 **메모리에만** — 폰 저장소에 남기지 않는다(학생 자료와 같은 원칙). 저장하는 것은 켬/끔·고른 캘린더·저장 위치뿐.
      반복은 구글에 «회차로 펼쳐서» 받는다(singleEvents) — 폰은 반복 규칙을 해석하지 않는다. 회차 번호도 같이 온다.
-     TD2만 쓰는 값(중요 td2r·끝냄 td2done)은 PC와 같은 숨김 칸(extendedProperties.private)에 적는다 — PC·폰이 같이 본다. */
-  var SCOPE_EV = 'https://www.googleapis.com/auth/calendar.events.owned';
+     TD2만 쓰는 값(중요 td2r·끝냄 td2done)은 PC와 같은 숨김 칸(extendedProperties.private)에 적는다 — PC·폰이 같이 본다.
+     m25: 권한을 events.owned(내 소유만) → events(공유받은 캘린더 포함)로 넓혔다(PC 3.57과 같이 · 09-26 형님 결정).
+     쓰기는 목록의 accessRole이 owner·writer인 캘린더만 — 보기(reader)로 공유받은 것은 보기만(ro). */
+  var SCOPE_EV = 'https://www.googleapis.com/auth/calendar.events';
   var SCOPE_LIST = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
   function calPref() { var g = lsGet('gcal', null); return g && typeof g === 'object' ? g : { on: 0 }; }
   function scopeNow() { return calPref().on ? SCOPE + ' ' + SCOPE_EV + ' ' + SCOPE_LIST : SCOPE; }
@@ -384,7 +386,7 @@
     var x = (it.extendedProperties && it.extendedProperties.private) || {};
     return {
       id: it.id, calId: cal.id, cal: cal.nm, etag: it.etag || '', t: String(it.summary || ''), s: it.start || null, e: it.end || null,
-      rec: it.recurringEventId || '', att: Array.isArray(it.attendees) && it.attendees.length ? 1 : 0,
+      rec: it.recurringEventId || '', att: Array.isArray(it.attendees) && it.attendees.length ? 1 : 0, ro: cal.w ? 0 : 1,
       red: x.td2r === '1' ? 1 : 0, done: x.td2done === '1' ? 1 : 0
     };
   }
@@ -395,12 +397,17 @@
     if (calLoading) return calLoading;
     state.gcal = merge(state.gcal, { busy: true }); emit();
     var pref = calPref(), rg = calRange();
-    calLoading = capi('GET', '/users/me/calendarList?' + new URLSearchParams({ minAccessRole: 'owner', fields: 'items(id,summary,summaryOverride,primary)' }).toString())
+    calLoading = capi('GET', '/users/me/calendarList?' + new URLSearchParams({ minAccessRole: 'reader', fields: 'items(id,summary,summaryOverride,primary,accessRole)' }).toString())
       .then(function (j) { return (j && j.items) || []; }, function (e) { if (e.code === 'no-cal') return []; throw e; })
       .then(function (list) {
         var me = tokEmail() || state.email;
-        if (!list.length) list = [{ id: me || 'primary', summary: me || '내 캘린더', primary: true }];
-        var cals = list.map(function (c) { return { id: c.id, nm: c.summaryOverride || c.summary || c.id, primary: !!c.primary }; });
+        if (!list.length) list = [{ id: me || 'primary', summary: me || '내 캘린더', primary: true, accessRole: 'owner' }];
+        var cals = list.map(function (c) {
+          return { id: c.id, nm: c.summaryOverride || c.summary || c.id, primary: !!c.primary,
+            w: c.accessRole === 'owner' || c.accessRole === 'writer' ? 1 : 0, own: c.accessRole === 'owner' ? 1 : 0 };
+        });
+        // 내 캘린더 먼저, 그다음 공유받은 것(쓰기 되는 것 먼저)
+        cals.sort(function (a, b) { return (b.primary - a.primary) || (b.own - a.own) || (b.w - a.w); });
         var want = Array.isArray(pref.cals) && pref.cals.length ? pref.cals : cals.filter(function (c) { return c.primary; }).map(function (c) { return c.id; });
         var on = cals.filter(function (c) { return want.indexOf(c.id) >= 0; });
         var items = [];
@@ -481,6 +488,7 @@
     return calWrite(function () {
       var x = p.x, body = {};
       if (x.att) return Promise.reject(gErr('att', '참석자가 있는 일정은 구글 캘린더 앱에서 고쳐 주세요'));
+      if (x.ro) return Promise.reject(gErr('ro', '보기만 허락된 캘린더입니다 — 캘린더 주인에게 «일정 변경» 권한을 받아야 고칠 수 있습니다'));
       if (p.t !== undefined) body.summary = String(p.t).trim();
       if (p.scope !== 'all' && (p.date !== undefined || p.tm !== undefined)) {
         var sd = x.s && (x.s.date || (x.s.dateTime && ymdL(new Date(x.s.dateTime))));
@@ -504,6 +512,7 @@
     return calWrite(function () {
       var x = p.x;
       if (x.att) return Promise.reject(gErr('att', '참석자가 있는 일정은 구글 캘린더 앱에서 지워 주세요'));
+      if (x.ro) return Promise.reject(gErr('ro', '보기만 허락된 캘린더입니다 — 캘린더 주인에게 «일정 변경» 권한을 받아야 지울 수 있습니다'));
       var all = p.scope === 'all' && x.rec;
       return capi('DELETE', '/calendars/' + encodeURIComponent(x.calId) + '/events/' + encodeURIComponent(all ? x.rec : x.id), null, all ? {} : (x.etag ? { 'If-Match': x.etag } : {}))
         .then(null, function (e) { if (e.code === 'not-found') return null; throw e; });

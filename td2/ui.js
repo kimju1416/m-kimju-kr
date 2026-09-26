@@ -21,7 +21,7 @@
     return;
   }
 
-  var UI_VER = 'm24 · 2026-09-25';
+  var UI_VER = 'm25 · 2026-09-26';
   var PR = window.TD2PREFS || null;
   function prefs() {
     return PR ? PR.get() : { theme: 'base', accent: 'red', font: 'pretendard', size: 'm', start: 'last', tab: 'cal', navMode: 'fixed', barColor: 'title', calSize: 'm', calWeekend: true, calWeekNo: false, calOrder: 'ev', showMeal: true, showOt: true, visits: 0, installNo: true, chipFree: false, chipDaily: false, subjs: [], subj: '' };
@@ -1166,7 +1166,7 @@
   function evTitleCell(e) {
     var c = td('');
     // 구글 일정(m23) — 제목을 누르면 고치기 시트(참석자 일정은 보기만)
-    if (e.gl && !e.gl.att) { c.classList.add('gtap'); c.setAttribute('role', 'button'); c.tabIndex = 0; c.addEventListener('click', function () { openGcalEdit(e); }); }
+    if (e.gl && !e.gl.att && !e.gl.ro) { c.classList.add('gtap'); c.setAttribute('role', 'button'); c.tabIndex = 0; c.addEventListener('click', function () { openGcalEdit(e); }); }
     c.appendChild(h('span', 'ttl' + (e.red || e.imp ? ' hot' : ''), isSch(e) ? schTitle(e) : (e.t || '(제목 없음)')));
     if (isSch(e) && e.who) c.appendChild(h('span', 'mini', e.who));
     var mini = eventMini(e);
@@ -1182,7 +1182,7 @@
   }
   // 내 일정은 오른쪽 칸이 체크 단추(반복이면 그 회차), 학사·구글은 구분 글자
   function evKindCell(e) {
-    if (e.gl && !e.gl.att) {
+    if (e.gl && !e.gl.att && !e.gl.ro) {
       var cg = td('ckc');
       var bg = btn('evck' + (e.done ? ' on' : ''), null, function () { onGcalDone(e); });
       bg.setAttribute('role', 'checkbox');
@@ -1489,7 +1489,7 @@
     var g = gcalLive();
     if (!g) return '';
     var d = M.gcal.pref().dest || '';
-    var on = (g.cals || []).filter(function (c) { return c.on; });
+    var on = (g.cals || []).filter(function (c) { return c.on && c.w; });     // 보기만 허락된 공유 캘린더는 넣을 곳이 아니다
     return on.some(function (c) { return c.id === d; }) ? d : '';
   }
   function renderEvDest() {
@@ -1497,7 +1497,7 @@
     if (!box) return;
     clear(box);
     var g = gcalLive();
-    var on = g ? (g.cals || []).filter(function (c) { return c.on; }) : [];
+    var on = g ? (g.cals || []).filter(function (c) { return c.on && c.w; }) : [];
     box.hidden = !(ui.addKind === 'event' && on.length);
     if (box.hidden) return;
     var items = [{ id: '', nm: '저장: TD2' }].concat(on.map(function (c) { return { id: c.id, nm: on.length > 1 ? '구글 · ' + c.nm : '구글 캘린더' }; }));
@@ -3883,14 +3883,14 @@
         gc.appendChild(h('p', 'mail', gs.busy ? '구글 캘린더를 받는 중…' : (gs.at ? '구글 캘린더 일정 ' + (gs.items || []).length + '건 · ' + hm(new Date(gs.at)) + ' 받음' : '아직 받지 않았습니다')));
         if (gs.err) gc.appendChild(h('p', 'warn-tx', gs.err));
         (gs.cals || []).forEach(function (c) {
-          gc.appendChild(segCols(radioGroup('segr', c.nm, [{ id: 'on', nm: c.nm + ' 보기' }, { id: 'off', nm: '안 보기' }], c.on ? 'on' : 'off', function (id) {
+          gc.appendChild(segCols(radioGroup('segr', c.nm + (c.primary || c.own ? '' : c.w ? ' (공유 · 쓰기 가능)' : ' (공유 · 보기만)'), [{ id: 'on', nm: c.nm + ' 보기' }, { id: 'off', nm: '안 보기' }], c.on ? 'on' : 'off', function (id) {
             var ons = (gs.cals || []).filter(function (x) { return x.id === c.id ? id === 'on' : x.on; }).map(function (x) { return x.id; });
             M.gcal.set({ cals: ons });
           }, textBtn), 2));
         });
         if (gs.errCode === 'no-cal') gc.appendChild(withId(btn('obtn', '다시 허락', function () { M.gcal.enable(); }), 'gc-again'));
         gc.appendChild(withId(btn('obtn', '구글 캘린더 쓰기 끄기', function () { M.gcal.disable(); renderOptAcct(); }), 'gc-off'));
-        gc.appendChild(h('p', 'opt-foot', '끄면 이 폰 화면에서만 빠집니다. 구글 캘린더의 일정은 그대로입니다.'));
+        gc.appendChild(h('p', 'opt-foot', '공유받은 캘린더(학년·학교 캘린더 등)는 주인이 «일정 변경» 권한을 줬으면 쓰기까지, «보기»만 줬으면 보기만 됩니다. 끄면 이 폰 화면에서만 빠집니다. 구글 캘린더의 일정은 그대로입니다.'));
       }
       box.appendChild(gc);
     }
